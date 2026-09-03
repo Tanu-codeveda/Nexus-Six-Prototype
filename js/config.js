@@ -1,19 +1,30 @@
 /**
- * Runtime configuration.
- * Backend is the FastAPI service from main.py (Member 3's Core API).
- * Change the API base at runtime via the ⚙ settings drawer — it is
- * persisted in localStorage so each admin only sets it once per browser.
+ * Runtime configuration for CivicPulse.
+ *
+ * IMPORTANT:
+ * Category, severity, status and department values here
+ * must match the backend exactly.
  */
+
 window.CivicPulseConfig = {
   get apiBase() {
-    return localStorage.getItem("cp_api_base") || "http://localhost:8000";
-  },
-  set apiBase(value) {
-    localStorage.setItem("cp_api_base", value.replace(/\/+$/, ""));
+    return (
+      localStorage.getItem("cp_api_base") ||
+      "http://localhost:8000"
+    );
   },
 
-  // Taxonomies mirrored from ai_helpers.py so filters/selects work even
-  // before the AI/ML services are wired up.
+  set apiBase(value) {
+    localStorage.setItem(
+      "cp_api_base",
+      value.replace(/\/+$/, "")
+    );
+  },
+
+  // -----------------------------------------------------
+  // Canonical categories
+  // -----------------------------------------------------
+
   CATEGORIES: [
     "Roads and Potholes",
     "Water Supply",
@@ -23,8 +34,33 @@ window.CivicPulseConfig = {
     "Sanitation",
     "Traffic Issues",
   ],
-  SEVERITIES: ["Low", "Medium", "High", "Critical"],
-  STATUSES: ["Pending", "Acknowledged", "In Progress", "Resolved"],
+
+  // -----------------------------------------------------
+  // Severity
+  // -----------------------------------------------------
+
+  SEVERITIES: [
+    "Low",
+    "Medium",
+    "High",
+    "Critical",
+  ],
+
+  // -----------------------------------------------------
+  // Complaint status
+  // -----------------------------------------------------
+
+  STATUSES: [
+    "Pending",
+    "Acknowledged",
+    "In Progress",
+    "Resolved",
+  ],
+
+  // -----------------------------------------------------
+  // Departments
+  // -----------------------------------------------------
+
   DEPARTMENTS: [
     "Unassigned",
     "Public Works Department (PWD)",
@@ -37,9 +73,20 @@ window.CivicPulseConfig = {
     "City Municipal Corporation",
   ],
 
-  // Fallback map center: Ranchi, Jharkhand.
-  DEFAULT_MAP_CENTER: [23.3441, 85.3096],
+  // -----------------------------------------------------
+  // Map
+  // -----------------------------------------------------
+
+  DEFAULT_MAP_CENTER: [
+    23.3441,
+    85.3096,
+  ],
+
   DEFAULT_MAP_ZOOM: 12,
+
+  // -----------------------------------------------------
+  // Refresh
+  // -----------------------------------------------------
 
   REFRESH_INTERVAL_MS: 30000,
 };
