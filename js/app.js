@@ -10,7 +10,42 @@
   let allComplaints = [];
   let selectedId = null;
   let filters = { category: new Set(), severity: new Set(), status: new Set(), dept: "", search: "" };
+  // -----------------------------------------------------
+  // Legacy taxonomy compatibility
+  // -----------------------------------------------------
+  //
+  // Older complaints may still contain the previous
+  // backend values. Normalize them so the current
+  // dashboard can display/filter them correctly.
+  //
 
+  const CATEGORY_ALIASES = {
+    "Roads & PWD": "Roads and Potholes",
+    "General Maintenance": "Public Safety",
+    "Electrical & Power": "Electricity and Power",
+    "Water & Sewage": "Water Supply",
+    "Sanitation Dept": "Waste Management",
+  };
+
+  const DEPARTMENT_ALIASES = {
+    "PWD - Road Maintenance": "Public Works Department (PWD)",
+    "Solid Waste Management": "Municipal Solid Waste Dept",
+    "Zonal Lighting Office": "Electricity Board",
+    "Water Supply Dept": "Water and Sewage Board",
+  };
+
+  function normalizeComplaint(complaint) {
+    return {
+      ...complaint,
+      ai_category:
+        CATEGORY_ALIASES[complaint.ai_category] ||
+        complaint.ai_category,
+
+      assigned_department:
+        DEPARTMENT_ALIASES[complaint.assigned_department] ||
+        complaint.assigned_department,
+    };
+  }
   // ---------- boot ----------
   document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("apiBaseInput").value = cfg.apiBase;
@@ -117,14 +152,18 @@
   }
 
   // ---------- data load ----------
-  async function loadComplaints() {
+    async function loadComplaints() {
     try {
-      allComplaints = await api.getComplaints();
+      const complaints = await api.getComplaints();
+
+      allComplaints = complaints.map(normalizeComplaint);
+
       updateTicker();
       applyFiltersAndRender();
     } catch (err) {
       console.error("Failed to load complaints:", err);
-      document.getElementById("tickerTime").textContent = "connection error";
+      document.getElementById("tickerTime").textContent =
+        "connection error";
     }
   }
 
@@ -191,7 +230,12 @@
     msg.textContent = "Saving…";
 
     try {
-      const updated = await api.updateComplaint(selectedId, { status, assigned_department });
+      const updated = normalizeComplaint(
+  await api.updateComplaint(
+    selectedId,
+    { status, assigned_department }
+  )
+);
       const idx = allComplaints.findIndex((c) => c.id === selectedId);
       if (idx !== -1) allComplaints[idx] = updated;
       msg.textContent = "Saved.";
