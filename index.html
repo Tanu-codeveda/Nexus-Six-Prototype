@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CivicPulse Ops — Admin Dashboard</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ============ MASTHEAD ============ -->
+<header class="masthead">
+  <div class="masthead__id">
+    <span class="masthead__mark" aria-hidden="true">CP</span>
+    <div class="masthead__titles">
+      <h1>CivicPulse Ops</h1>
+      <p>Dept. of Higher &amp; Technical Education · Government of Jharkhand</p>
+    </div>
+  </div>
+
+  <div class="masthead__ticker" id="ticker" role="status" aria-live="polite">
+    <span class="ticker__item"><strong id="tickerPending">–</strong> pending</span>
+    <span class="ticker__divider"></span>
+    <span class="ticker__item ticker__item--critical"><strong id="tickerCritical">–</strong> critical</span>
+    <span class="ticker__divider"></span>
+    <span class="ticker__item">updated <strong id="tickerTime">–</strong></span>
+  </div>
+
+  <div class="masthead__actions">
+    <button class="btn btn--ghost" id="refreshBtn" title="Refresh reports">Refresh</button>
+    <button class="btn btn--ghost btn--icon" id="settingsBtn" title="API connection settings">⚙</button>
+  </div>
+</header>
+
+<!-- ============ SETTINGS DRAWER ============ -->
+<div class="drawer" id="settingsDrawer" hidden>
+  <div class="drawer__panel">
+    <h2>Connection</h2>
+    <label for="apiBaseInput">API base URL</label>
+    <input id="apiBaseInput" type="text" placeholder="http://localhost:8000" />
+    <div class="drawer__actions">
+      <button class="btn btn--ghost" id="settingsCancel">Cancel</button>
+      <button class="btn btn--primary" id="settingsSave">Save &amp; reconnect</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MAIN LAYOUT ============ -->
+<main class="layout">
+
+  <!-- FILTER PANEL -->
+  <aside class="filters" aria-label="Report filters">
+    <h2>Filter queue</h2>
+
+    <div class="filter-group">
+      <span class="filter-group__label">Category</span>
+      <div id="filterCategory" class="chip-group"></div>
+    </div>
+
+    <div class="filter-group">
+      <span class="filter-group__label">Severity</span>
+      <div id="filterSeverity" class="chip-group"></div>
+    </div>
+
+    <div class="filter-group">
+      <span class="filter-group__label">Status</span>
+      <div id="filterStatus" class="chip-group"></div>
+    </div>
+
+    <div class="filter-group">
+      <label class="filter-group__label" for="filterDept">Department</label>
+      <select id="filterDept">
+        <option value="">All departments</option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label class="filter-group__label" for="filterSearch">Search description / location</label>
+      <input id="filterSearch" type="text" placeholder="e.g. Ranchi Main Road" />
+    </div>
+
+    <button class="btn btn--text" id="clearFilters">Clear all filters</button>
+
+    <div class="filter-summary" id="filterSummary">Showing all reports</div>
+  </aside>
+
+  <!-- MAP -->
+  <section class="map-wrap" aria-label="Issue map">
+    <div id="map"></div>
+    <div class="map-legend">
+      <span><i class="dot dot--low"></i>Low</span>
+      <span><i class="dot dot--medium"></i>Medium</span>
+      <span><i class="dot dot--high"></i>High</span>
+      <span><i class="dot dot--critical"></i>Critical</span>
+    </div>
+  </section>
+
+  <!-- DETAIL PANEL -->
+  <aside class="detail" id="detailPanel" aria-label="Report detail">
+    <div class="detail__empty" id="detailEmpty">
+      <p>Select a report on the map or in the queue below to review and act on it.</p>
+    </div>
+
+    <div class="detail__content" id="detailContent" hidden>
+      <span class="detail__id" id="detailId"></span>
+      <h3 id="detailCategory"></h3>
+      <p class="detail__desc" id="detailDescription"></p>
+
+      <dl class="detail__meta">
+        <div><dt>Location</dt><dd id="detailLocation"></dd></div>
+        <div><dt>Reported</dt><dd id="detailCreated"></dd></div>
+        <div><dt>Severity</dt><dd id="detailSeverity"></dd></div>
+      </dl>
+
+      <img id="detailMedia" class="detail__media" alt="Submitted photo" hidden />
+
+      <div class="detail__field">
+        <label for="detailStatusSelect">Status</label>
+        <select id="detailStatusSelect">
+          <option>Pending</option>
+          <option>Acknowledged</option>
+          <option>In Progress</option>
+          <option>Resolved</option>
+        </select>
+      </div>
+
+      <div class="detail__field">
+        <label for="detailDeptSelect">Assigned department</label>
+        <select id="detailDeptSelect"></select>
+      </div>
+
+      <button class="btn btn--primary btn--block" id="detailSave">Save changes</button>
+      <p class="detail__status-msg" id="detailSaveMsg" role="status"></p>
+    </div>
+  </aside>
+
+  <!-- REPORT QUEUE TABLE -->
+  <section class="queue" aria-label="Report queue">
+    <div class="queue__head">
+      <h2>Report queue</h2>
+      <span class="queue__count" id="queueCount"></span>
+    </div>
+    <div class="queue__table-wrap">
+      <table class="queue__table">
+        <thead>
+          <tr>
+            <th data-sort="id">ID</th>
+            <th data-sort="ai_category">Category</th>
+            <th data-sort="ai_severity">Severity</th>
+            <th data-sort="status">Status</th>
+            <th data-sort="assigned_department">Department</th>
+            <th data-sort="created_at">Reported</th>
+            <th>Location</th>
+          </tr>
+        </thead>
+        <tbody id="queueBody"></tbody>
+      </table>
+      <p class="queue__empty" id="queueEmptyMsg" hidden>No reports match the current filters.</p>
+    </div>
+  </section>
+
+  <!-- ANALYTICS -->
+  <section class="analytics" aria-label="Analytics">
+    <h2>Reporting trends</h2>
+    <div class="analytics__grid">
+      <div class="analytics__card">
+        <h3>Reports by category</h3>
+        <canvas id="chartCategory"></canvas>
+      </div>
+      <div class="analytics__card">
+        <h3>Severity mix</h3>
+        <canvas id="chartSeverity"></canvas>
+      </div>
+      <div class="analytics__card">
+        <h3>Status distribution</h3>
+        <canvas id="chartStatus"></canvas>
+      </div>
+      <div class="analytics__card analytics__card--wide">
+        <h3>Reports received per day</h3>
+        <canvas id="chartTrend"></canvas>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/map.js"></script>
+<script src="js/table.js"></script>
+<script src="js/analytics.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
