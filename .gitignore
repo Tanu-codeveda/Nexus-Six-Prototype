@@ -3,3 +3,4 @@ __pycache__/
 *.py[cod]
 *.pt
 .env
+civicpulse-frontend/node_modules/
