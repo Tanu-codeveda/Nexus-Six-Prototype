@@ -28,12 +28,13 @@ CIVIC_CLASS_MAP = {
     "litter": "garbage_accumulation",
     "broken_streetlight": "broken_streetlight",
     "streetlight_off": "broken_streetlight",
-    # COCO pre-trained proxies (for demo testing with standard yolo11n.pt)
+    # COCO pre-trained proxies (for demo testing with standard yolo11n.pt).
+    # Keep mappings conservative: generic cars/signs must not be presented as
+    # civic damage because a generic detector does not establish that fact.
     "bottle": "garbage_accumulation",
     "cup": "garbage_accumulation",
-    "traffic light": "broken_streetlight",
-    "stop sign": "broken_streetlight",
-    "car": "pothole",
+    "traffic light": "traffic_signal",
+    "stop sign": "traffic_signage",
 }
 
 SEVERITY_THRESHOLDS = {

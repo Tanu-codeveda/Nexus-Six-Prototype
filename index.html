@@ -28,6 +28,8 @@
     <span class="ticker__divider"></span>
     <span class="ticker__item ticker__item--critical"><strong id="tickerCritical">–</strong> critical</span>
     <span class="ticker__divider"></span>
+    <span class="ticker__item"><strong id="tickerHotspots">–</strong> hotspots</span>
+    <span class="ticker__divider"></span>
     <span class="ticker__item">updated <strong id="tickerTime">–</strong></span>
   </div>
 
@@ -80,6 +82,7 @@
   <section class="map-wrap" aria-label="Issue map">
     <div id="map"></div>
     <div class="map-legend">
+      <label class="heat-toggle"><input id="heatmapToggle" type="checkbox" checked /> Heatmap</label>
       <span><i class="dot dot--low"></i>Low</span>
       <span><i class="dot dot--medium"></i>Medium</span>
       <span><i class="dot dot--high"></i>High</span>
@@ -106,9 +109,13 @@
         <div><dt>Resolved</dt><dd id="detailResolved">—</dd></div>
         <div><dt>Last updated</dt><dd id="detailUpdated">—</dd></div>
         <div><dt>Severity</dt><dd id="detailSeverity"></dd></div>
+        <div><dt>AI confidence</dt><dd id="detailConfidence">—</dd></div>
         <div><dt>Community verification</dt><dd id="detailVerification">0 confirmations</dd></div>
         <div><dt>Projected service window</dt><dd id="detailEstimate">—</dd></div>
+        <div><dt>Prediction basis</dt><dd id="detailPredictionBasis">Prototype baseline</dd></div>
         <div><dt>Probable contributing factor</dt><dd id="detailRootCause">Not available</dd></div>
+        <div><dt>Contributing signals</dt><dd id="detailRootFactors">Not available</dd></div>
+        <div><dt>Recommended action</dt><dd id="detailRecommendedAction">Inspect the reported location.</dd></div>
       </dl>
 
       <img id="detailMedia" class="detail__media" alt="Submitted photo" hidden />
@@ -128,7 +135,7 @@
         <select id="detailDeptSelect"></select>
       </div>
 
-      <div id="detailPriority" class="detail__insight" hidden></div><div id="detailDuplicates" class="detail__duplicates" hidden></div><button class="btn btn--primary btn--block" id="detailSave">Save changes</button>
+      <div id="detailPriority" class="detail__insight" hidden></div><div id="detailDuplicates" class="detail__duplicates" hidden></div><div class="detail__progress"><div class="detail__progress-head"><strong>Citizen progress feed</strong><span>Visible in tracking</span></div><div id="detailProgressTimeline" class="progress-timeline"></div><label for="detailProgressMessage">Add progress update</label><textarea id="detailProgressMessage" maxlength="500" rows="3" placeholder="e.g. Crew scheduled to inspect the site tomorrow morning."></textarea></div><button class="btn btn--primary btn--block" id="detailSave">Save changes</button>
       <p class="detail__status-msg" id="detailSaveMsg" role="status"></p>
     </div>
   </aside>
@@ -146,6 +153,7 @@
             <th data-sort="id">ID</th>
             <th data-sort="ai_category">Category</th>
             <th data-sort="ai_severity">Severity</th>
+            <th data-sort="priority_score">Priority</th>
             <th data-sort="status">Status</th>
             <th data-sort="assigned_department">Department</th>
             <th data-sort="created_at">Reported</th>
@@ -168,7 +176,10 @@
       <div class="metric-card"><span>Avg. resolution</span><strong id="metricResolution">—</strong></div>
       <div class="metric-card"><span>Resolved rate</span><strong id="metricResolvedRate">—</strong></div>
       <div class="metric-card"><span>High / critical</span><strong id="metricHighRisk">—</strong></div>
+      <div class="metric-card"><span>Hotspot reports</span><strong id="metricHotspots">—</strong></div>
+      <div class="metric-card"><span>Avg. predicted time</span><strong id="metricPrediction">—</strong></div>
     </div>
+    <div id="intelligenceSummary" class="intelligence-summary"><strong>Operational intelligence</strong><span>Loading live priority signals…</span></div>
     <h2>Reporting trends</h2>
     <div class="analytics__grid">
       <div class="analytics__card">
@@ -194,6 +205,7 @@
 <div id="adminToast" class="admin-toast" role="status" aria-live="polite"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="js/config.js"></script>
 <script src="js/api.js"></script>

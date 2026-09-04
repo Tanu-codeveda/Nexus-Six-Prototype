@@ -2,21 +2,51 @@ window.CivicPulseMap = (function () {
   let map = null;
   let markerLayer = null;
   let hotspotLayer = null;
+  let heatLayer = null;
   let onSelect = null;
+
   const SEVERITY_COLOR = { Low: "#2E6B4C", Medium: "#B9791F", High: "#A6421F", Critical: "#8C2A2A" };
+  const HEAT_WEIGHT = { Low: 0.25, Medium: 0.5, High: 0.8, Critical: 1.0 };
 
   function init(onSelectCallback) {
     onSelect = onSelectCallback;
     const cfg = window.CivicPulseConfig;
     map = L.map("map", { zoomControl: true }).setView(cfg.DEFAULT_MAP_CENTER, cfg.DEFAULT_MAP_ZOOM);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
     markerLayer = L.layerGroup().addTo(map);
     hotspotLayer = L.layerGroup().addTo(map);
+    if (typeof L.heatLayer === "function") {
+      heatLayer = L.heatLayer([], {
+        radius: 32,
+        blur: 28,
+        maxZoom: 15,
+        max: 1.0,
+        minOpacity: 0.28,
+      }).addTo(map);
+    }
+
+    const toggle = document.getElementById("heatmapToggle");
+    if (toggle) {
+      toggle.checked = true;
+      toggle.addEventListener("change", () => {
+        if (!heatLayer) return;
+        if (toggle.checked) heatLayer.addTo(map);
+        else map.removeLayer(heatLayer);
+      });
+    }
   }
 
   function markerIcon(severity) {
     const color = SEVERITY_COLOR[severity] || SEVERITY_COLOR.Low;
-    return L.divIcon({ className: "", html: `<span style="display:block;width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 0 1px ${color};"></span>`, iconSize: [14, 14], iconAnchor: [7, 7] });
+    return L.divIcon({
+      className: "",
+      html: `<span style="display:block;width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 0 1px ${color};"></span>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+    });
   }
 
   function distanceKm(a, b) {
@@ -24,7 +54,7 @@ window.CivicPulseMap = (function () {
     const dLat = (b.latitude - a.latitude) * Math.PI / 180;
     const dLon = (b.longitude - a.longitude) * Math.PI / 180;
     const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.latitude * Math.PI / 180) * Math.cos(b.latitude * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-    return 2 * R * Math.asin(Math.sqrt(x));
+    return 2 * R * Math.asin(Math.sqrt(Math.max(0, Math.min(1, x))));
   }
 
   function renderHotspots(items) {
@@ -42,24 +72,41 @@ window.CivicPulseMap = (function () {
       const lat = group.reduce((sum, item) => sum + item.latitude, 0) / group.length;
       const lon = group.reduce((sum, item) => sum + item.longitude, 0) / group.length;
       const high = group.filter((item) => item.ai_severity === "High" || item.ai_severity === "Critical").length;
-      const radius = Math.min(700, 240 + group.length * 60);
-      const color = high >= 2 ? "#8C2A2A" : "#B9791F";
-      L.circle([lat, lon], { radius, color, fillColor: color, fillOpacity: 0.15, weight: 2 })
-        .bindPopup(`<strong>Priority hotspot</strong><br>${group.length} related ${group[0].ai_category} reports within ~650 m<br>${high} high/critical`)
+      const score = Math.min(100, 35 + group.length * 8 + high * 7);
+      const radius = Math.min(760, 230 + group.length * 55);
+      const color = score >= 70 ? "#8C2A2A" : "#B9791F";
+      L.circle([lat, lon], {
+        radius,
+        color,
+        fillColor: color,
+        fillOpacity: 0.12,
+        weight: 2,
+      })
+        .bindPopup(`<strong>Priority hotspot</strong><br>${group.length} related ${group[0].ai_category} reports within ~650 m<br>Hotspot score ${score}/100 · ${high} high/critical`)
         .addTo(hotspotLayer);
     });
   }
 
+  function renderHeatmap(items) {
+    if (!heatLayer) return;
+    const points = items
+      .filter((c) => typeof c.latitude === "number" && typeof c.longitude === "number")
+      .map((c) => [c.latitude, c.longitude, HEAT_WEIGHT[c.ai_severity] || 0.25]);
+    heatLayer.setLatLngs(points);
+  }
+
   function render(complaints) {
     markerLayer.clearLayers();
-    hotspotLayer.clearLayers();
     const withCoords = complaints.filter((c) => typeof c.latitude === "number" && typeof c.longitude === "number");
     withCoords.forEach((c) => {
+      const duplicateText = Number(c.duplicate_count || 0) > 0 ? ` · ${c.duplicate_count} possible duplicate${c.duplicate_count === 1 ? "" : "s"}` : "";
       L.marker([c.latitude, c.longitude], { icon: markerIcon(c.ai_severity) })
-        .bindTooltip(`${c.ai_category || "General Maintenance"} · ${c.ai_severity || "Low"}`, { direction: "top", offset: [0, -8] })
+        .bindTooltip(`${c.ai_category || "General Maintenance"} · ${c.ai_severity || "Low"}${duplicateText}`, { direction: "top", offset: [0, -8] })
         .on("click", () => onSelect && onSelect(c.id))
         .addTo(markerLayer);
     });
+
+    renderHeatmap(withCoords);
     renderHotspots(withCoords);
 
     const cfg = window.CivicPulseConfig;
@@ -75,5 +122,6 @@ window.CivicPulseMap = (function () {
     const target = complaints.find((c) => c.id === id);
     if (target && typeof target.latitude === "number") map.panTo([target.latitude, target.longitude]);
   }
+
   return { init, render, highlight };
 })();

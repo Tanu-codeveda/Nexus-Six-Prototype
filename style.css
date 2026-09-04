@@ -203,3 +203,34 @@ button, input, select { font-family: inherit; font-size: inherit; }
   .map-wrap { height: 380px; }
   .analytics__grid { grid-template-columns: 1fr; }
 }
+
+/* ---------------- Operational intelligence ---------------- */
+.heat-toggle { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink-soft); }
+.heat-toggle input { accent-color: var(--green); }
+.detail__insight {
+  display: grid; gap: 4px; padding: 10px 11px; margin: 8px 0 10px;
+  background: var(--green-wash); border: 1px solid rgba(46,107,76,.22); border-radius: var(--radius);
+  color: var(--green-deep); font-size: 12px;
+}
+.detail__insight strong { font-family: var(--font-mono); font-size: 12px; }
+.detail__insight span { line-height: 1.4; }
+.detail__insight.is-critical { background: var(--crimson-wash); border-color: rgba(140,42,42,.22); color: var(--crimson); }
+.detail__duplicates {
+  display: grid; gap: 5px; padding: 10px 11px; margin: 8px 0 12px;
+  background: #F7F8FA; border: 1px solid var(--line); border-radius: var(--radius); font-size: 11.5px;
+}
+.detail__duplicates a { color: var(--green-deep); font-family: var(--font-mono); }
+.detail__progress { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+.detail__progress-head { display:flex; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.detail__progress-head strong { font-size: 12px; }
+.detail__progress-head span { font-size: 10px; color: var(--slate); }
+.detail__progress label { display:block; font-size:11px; color:var(--slate); margin:10px 0 5px; font-weight:600; }
+.detail__progress textarea { width:100%; resize:vertical; min-height:72px; border:1px solid var(--line-strong); border-radius:var(--radius); padding:8px; }
+.progress-timeline { display:grid; gap:7px; max-height:180px; overflow:auto; }
+.progress-event { border-left: 2px solid var(--green); padding:7px 0 7px 9px; background:#FBFCFB; }
+.progress-event span { display:block; font-size:9.5px; color:var(--slate); font-family:var(--font-mono); }
+.progress-event strong { display:block; font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
+.progress-event em { display:inline-block; margin-top:4px; font-style:normal; text-transform:uppercase; letter-spacing:.05em; font-size:8px; color:var(--green-deep); }
+.intelligence-summary { display:grid; gap:3px; margin: 0 0 18px; padding: 12px 14px; border:1px solid var(--line); border-radius:var(--radius); background:#FBFCFB; }
+.intelligence-summary strong { font-size:12px; }
+.intelligence-summary span, .intelligence-summary small { color:var(--slate); font-size:11px; }

@@ -1,7 +1,7 @@
 /**
- * App controller: fetches complaints from the Core API, applies the
- * filter panel, and keeps the map / queue table / detail panel /
- * analytics in sync.
+ * CivicPulse Ops controller. The API now returns operational intelligence so
+ * the dashboard can explain priority, duplicates, predictive service time,
+ * root-cause signals and citizen-facing progress updates.
  */
 (function () {
   const cfg = window.CivicPulseConfig;
@@ -13,14 +13,6 @@
   let firstLoad = true;
   let previousIds = new Set();
 
-  function haversineKm(a, b) {
-    const R = 6371;
-    const dLat = (b.latitude - a.latitude) * Math.PI / 180;
-    const dLon = (b.longitude - a.longitude) * Math.PI / 180;
-    const x = Math.sin(dLat/2)**2 + Math.cos(a.latitude*Math.PI/180) * Math.cos(b.latitude*Math.PI/180) * Math.sin(dLon/2)**2;
-    return 2 * R * Math.asin(Math.sqrt(x));
-  }
-
   function showAdminToast(message) {
     const el = document.getElementById("adminToast");
     if (!el) return;
@@ -30,35 +22,6 @@
     window.__cpToastTimer = setTimeout(() => el.classList.remove("is-visible"), 4500);
   }
 
-  function priorityScore(c) {
-    const base = { Critical: 100, High: 80, Medium: 55, Low: 30 }[c.ai_severity] || 30;
-    const nearby = allComplaints.filter(x => x.id !== c.id && typeof x.latitude === "number" && typeof x.longitude === "number" && typeof c.latitude === "number" && typeof c.longitude === "number" && haversineKm(c, x) <= 0.65).length;
-    return Math.min(100, base + Math.min(20, nearby * 5));
-  }
-
-  function findDuplicates(c) {
-    if (typeof c.latitude !== "number" || typeof c.longitude !== "number") return [];
-    const words = new Set((c.description || "").toLowerCase().split(/\W+/).filter((w) => w.length >= 4));
-    return allComplaints
-      .filter((x) => {
-        if (x.id === c.id || typeof x.latitude !== "number" || typeof x.longitude !== "number") return false;
-        const distance = haversineKm(c, x);
-        if (distance > 0.35) return false;
-        if (c.ai_category && x.ai_category && c.ai_category !== x.ai_category) return false;
-        const other = new Set((x.description || "").toLowerCase().split(/\W+/).filter((w) => w.length >= 4));
-        const shared = [...words].filter((w) => other.has(w)).length;
-        const union = new Set([...words, ...other]).size || 1;
-        const similarity = shared / union;
-        const recent = c.created_at && x.created_at
-          ? Math.abs(new Date(c.created_at).getTime() - new Date(x.created_at).getTime()) <= 24 * 60 * 60 * 1000
-          : false;
-        return similarity >= 0.25 || (recent && shared >= 1);
-      })
-      .sort((a, b) => haversineKm(c, a) - haversineKm(c, b))
-      .slice(0, 5);
-  }
-
-  // ---------- boot ----------
   document.addEventListener("DOMContentLoaded", () => {
     buildFilterChips();
     buildSelectOptions();
@@ -70,23 +33,20 @@
   });
 
   function bindGlobalControls() {
-    document.getElementById("refreshBtn").addEventListener("click", loadComplaints);
+    document.getElementById("refreshBtn")?.addEventListener("click", loadComplaints);
     document.getElementById("exportBtn")?.addEventListener("click", exportCsv);
-    document.getElementById("clearFilters").addEventListener("click", clearFilters);
-
-    document.getElementById("filterSearch").addEventListener("input", (e) => {
+    document.getElementById("clearFilters")?.addEventListener("click", clearFilters);
+    document.getElementById("filterSearch")?.addEventListener("input", (e) => {
       filters.search = e.target.value.trim().toLowerCase();
       applyFiltersAndRender();
     });
-    document.getElementById("filterDept").addEventListener("change", (e) => {
+    document.getElementById("filterDept")?.addEventListener("change", (e) => {
       filters.dept = e.target.value;
       applyFiltersAndRender();
     });
-
-    document.getElementById("detailSave").addEventListener("click", saveDetail);
+    document.getElementById("detailSave")?.addEventListener("click", saveDetail);
   }
 
-  // ---------- filter panel ----------
   function buildFilterChips() {
     renderChipGroup("filterCategory", cfg.CATEGORIES, filters.category);
     renderChipGroup("filterSeverity", cfg.SEVERITIES, filters.severity);
@@ -95,44 +55,31 @@
 
   function renderChipGroup(containerId, values, targetSet) {
     const container = document.getElementById(containerId);
-    container.innerHTML = values
-      .map((v) => `<button class="chip" type="button" aria-pressed="false" data-value="${v}">${v}</button>`)
-      .join("");
-    container.querySelectorAll(".chip").forEach((chip) => {
-      chip.addEventListener("click", () => {
-        const v = chip.dataset.value;
-        const pressed = chip.getAttribute("aria-pressed") === "true";
-        chip.setAttribute("aria-pressed", String(!pressed));
-        if (pressed) targetSet.delete(v);
-        else targetSet.add(v);
-        applyFiltersAndRender();
-      });
-    });
+    if (!container) return;
+    container.innerHTML = values.map((value) => `<button class="chip" type="button" aria-pressed="false" data-value="${value}">${value}</button>`).join("");
+    container.querySelectorAll(".chip").forEach((chip) => chip.addEventListener("click", () => {
+      const value = chip.dataset.value;
+      const pressed = chip.getAttribute("aria-pressed") === "true";
+      chip.setAttribute("aria-pressed", String(!pressed));
+      if (pressed) targetSet.delete(value); else targetSet.add(value);
+      applyFiltersAndRender();
+    }));
   }
 
   function buildSelectOptions() {
     const deptFilter = document.getElementById("filterDept");
-    cfg.DEPARTMENTS.forEach((d) => {
-      const opt = document.createElement("option");
-      opt.value = d;
-      opt.textContent = d;
-      deptFilter.appendChild(opt);
-    });
-
     const deptDetail = document.getElementById("detailDeptSelect");
-    cfg.DEPARTMENTS.forEach((d) => {
-      const opt = document.createElement("option");
-      opt.value = d;
-      opt.textContent = d;
-      deptDetail.appendChild(opt);
+    cfg.DEPARTMENTS.forEach((dept) => {
+      const option1 = document.createElement("option"); option1.value = dept; option1.textContent = dept; deptFilter?.appendChild(option1);
+      const option2 = document.createElement("option"); option2.value = dept; option2.textContent = dept; deptDetail?.appendChild(option2);
     });
   }
 
   function clearFilters() {
     filters = { category: new Set(), severity: new Set(), status: new Set(), dept: "", search: "" };
-    document.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", "false"));
-    document.getElementById("filterDept").value = "";
-    document.getElementById("filterSearch").value = "";
+    document.querySelectorAll(".chip").forEach((chip) => chip.setAttribute("aria-pressed", "false"));
+    const dept = document.getElementById("filterDept"); if (dept) dept.value = "";
+    const search = document.getElementById("filterSearch"); if (search) search.value = "";
     applyFiltersAndRender();
   }
 
@@ -143,20 +90,23 @@
       if (filters.status.size && !filters.status.has(c.status)) return false;
       if (filters.dept && c.assigned_department !== filters.dept) return false;
       if (filters.search) {
-        const hay = `${c.description || ""} ${c.latitude || ""} ${c.longitude || ""}`.toLowerCase();
+        const hay = [
+          c.description, c.voice_transcript, c.ai_category, c.assigned_department,
+          c.probable_root_cause, c.recommended_action, c.priority_reason,
+          c.latitude, c.longitude,
+        ].filter(Boolean).join(" ").toLowerCase();
         if (!hay.includes(filters.search)) return false;
       }
       return true;
     });
   }
 
-  // ---------- data load ----------
   async function loadComplaints() {
     try {
       const freshComplaints = await api.getComplaints();
-      const freshIds = new Set(freshComplaints.map(c => c.id));
+      const freshIds = new Set(freshComplaints.map((c) => c.id));
       if (!firstLoad) {
-        const added = freshComplaints.filter(c => !previousIds.has(c.id));
+        const added = freshComplaints.filter((c) => !previousIds.has(c.id));
         if (added.length) {
           const first = added[0];
           showAdminToast(`${added.length} new complaint${added.length > 1 ? "s" : ""} received${first?.ai_category ? ` · ${first.ai_category}` : ""}`);
@@ -169,30 +119,30 @@
       applyFiltersAndRender();
     } catch (err) {
       console.error("Failed to load complaints:", err);
-      document.getElementById("tickerTime").textContent = "connection error";
+      const ticker = document.getElementById("tickerTime"); if (ticker) ticker.textContent = "connection error";
     }
   }
 
   function updateTicker() {
     const pending = allComplaints.filter((c) => c.status === "Pending").length;
     const critical = allComplaints.filter((c) => c.ai_severity === "Critical").length;
+    const hotspots = allComplaints.filter((c) => Number(c.nearby_report_count || 0) >= 3 && c.status !== "Resolved").length;
     document.getElementById("tickerPending").textContent = pending;
     document.getElementById("tickerCritical").textContent = critical;
+    document.getElementById("tickerHotspots").textContent = hotspots;
     document.getElementById("tickerTime").textContent = new Date().toLocaleTimeString();
   }
 
   function applyFiltersAndRender() {
     const filtered = getFiltered();
-
     const activeCount = filters.category.size + filters.severity.size + filters.status.size + (filters.dept ? 1 : 0) + (filters.search ? 1 : 0);
-    document.getElementById("filterSummary").textContent = activeCount
-      ? `${filtered.length} of ${allComplaints.length} reports match`
-      : "Showing all reports";
-
+    const summary = document.getElementById("filterSummary");
+    if (summary) summary.textContent = activeCount ? `${filtered.length} of ${allComplaints.length} reports match` : "Showing all reports";
     CivicPulseMap.render(filtered);
     CivicPulseTable.render(filtered, selectedId, selectComplaint);
     CivicPulseAnalytics.renderAll(filtered);
     updateOperationalMetrics(filtered);
+    renderIntelligenceSummary(filtered);
   }
 
   function minutesBetween(start, end) {
@@ -213,123 +163,134 @@
   }
 
   function updateOperationalMetrics(items) {
-    const ackTimes = items.map(c => minutesBetween(c.created_at, c.acknowledged_at)).filter(v => v !== null);
-    const resTimes = items.map(c => minutesBetween(c.created_at, c.resolved_at)).filter(v => v !== null);
-    const avg = values => values.length ? values.reduce((a,b) => a+b, 0) / values.length : null;
-    const resolved = items.filter(c => c.status === "Resolved").length;
-    const highRisk = items.filter(c => c.ai_severity === "High" || c.ai_severity === "Critical").length;
-    const ack = document.getElementById("metricAck");
-    const resolution = document.getElementById("metricResolution");
-    const resolvedRate = document.getElementById("metricResolvedRate");
-    const highRiskEl = document.getElementById("metricHighRisk");
-    if (ack) ack.textContent = formatDuration(avg(ackTimes));
-    if (resolution) resolution.textContent = formatDuration(avg(resTimes));
-    if (resolvedRate) resolvedRate.textContent = items.length ? `${Math.round(resolved / items.length * 100)}%` : "—";
-    if (highRiskEl) highRiskEl.textContent = items.length ? `${highRisk} / ${items.length}` : "—";
+    const ackTimes = items.map((c) => minutesBetween(c.created_at, c.acknowledged_at)).filter((v) => v !== null);
+    const resTimes = items.map((c) => minutesBetween(c.created_at, c.resolved_at)).filter((v) => v !== null);
+    const avg = (values) => values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+    const resolved = items.filter((c) => c.status === "Resolved").length;
+    const highRisk = items.filter((c) => c.ai_severity === "High" || c.ai_severity === "Critical").length;
+    const hotspotReports = items.filter((c) => Number(c.nearby_report_count || 0) >= 3 && c.status !== "Resolved").length;
+    const avgPrediction = items.map((c) => Number(c.estimated_resolution_hours)).filter(Number.isFinite);
+
+    const set = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
+    set("metricAck", formatDuration(avg(ackTimes)));
+    set("metricResolution", formatDuration(avg(resTimes)));
+    set("metricResolvedRate", items.length ? `${Math.round(resolved / items.length * 100)}%` : "—");
+    set("metricHighRisk", items.length ? `${highRisk} / ${items.length}` : "—");
+    set("metricHotspots", hotspotReports ? String(hotspotReports) : "0");
+    set("metricPrediction", avgPrediction.length ? formatDuration(avg(avgPrediction) * 60) : "—");
   }
 
-  function csvEscape(value) {
-    const text = value == null ? "" : String(value);
-    return `"${text.replace(/"/g, '""')}"`;
+  function renderIntelligenceSummary(items) {
+    const box = document.getElementById("intelligenceSummary");
+    if (!box) return;
+    const open = items.filter((c) => c.status !== "Resolved");
+    const top = [...open].sort((a, b) => Number(b.priority_score || 0) - Number(a.priority_score || 0))[0];
+    const cluster = [...open].sort((a, b) => Number(b.nearby_report_count || 0) - Number(a.nearby_report_count || 0))[0];
+    if (!top) {
+      box.innerHTML = "<strong>No active priority signals.</strong><span>New reports will be analysed automatically.</span>";
+      return;
+    }
+    box.innerHTML = `
+      <strong>Highest current priority: ${Number(top.priority_score || 0)}/100</strong>
+      <span>#${String(top.id).slice(0, 8).toUpperCase()} · ${escapeHtml(top.ai_category || "General Maintenance")}</span>
+      <small>${escapeHtml(top.priority_reason || "Severity and local report context")}</small>
+      ${cluster && Number(cluster.nearby_report_count || 0) >= 3 ? `<small>Hotspot signal: ${Number(cluster.nearby_report_count)} nearby active reports around #${String(cluster.id).slice(0, 8).toUpperCase()}.</small>` : ""}`;
   }
 
+  function escapeHtml(value) { return String(value ?? "").replace(/[&<>\"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[char])); }
+
+  function csvEscape(value) { const text = value == null ? "" : String(value); return `"${text.replace(/"/g, '""')}"`; }
   function exportCsv() {
     const rows = getFiltered();
     if (!rows.length) { showAdminToast("No visible reports to export"); return; }
-    const headers = ["id","latitude","longitude","description","ai_category","ai_severity","status","assigned_department","created_at","acknowledged_at","in_progress_at","resolved_at","updated_at","verification_count","last_verified_at","estimated_resolution_hours","probable_root_cause"];
-    const csv = [headers.join(","), ...rows.map(r => headers.map(h => csvEscape(r[h])).join(","))].join("\r\n");
-    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    const headers = ["id", "latitude", "longitude", "description", "voice_transcript", "ai_category", "ai_severity", "ai_confidence_score", "status", "assigned_department", "priority_score", "priority_reason", "nearby_report_count", "duplicate_count", "verification_count", "created_at", "acknowledged_at", "in_progress_at", "resolved_at", "updated_at", "estimated_resolution_hours", "prediction_basis", "probable_root_cause", "root_cause_factors", "recommended_action"];
+    const csv = [headers.join(","), ...rows.map((row) => headers.map((key) => csvEscape(Array.isArray(row[key]) ? row[key].join(" | ") : row[key])).join(","))].join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `civicpulse-reports-${new Date().toISOString().slice(0,10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    const a = document.createElement("a"); a.href = url; a.download = `civicpulse-reports-${new Date().toISOString().slice(0, 10)}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     showAdminToast(`Exported ${rows.length} report${rows.length === 1 ? "" : "s"}`);
   }
 
   function formatDateTime(value) {
     if (!value) return "—";
     const d = new Date(value);
-    if (!Number.isFinite(d.getTime())) return "—";
-    return d.toLocaleString(undefined, {
-      day: "2-digit", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit", second: "2-digit"
-    });
+    return Number.isFinite(d.getTime()) ? d.toLocaleString(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
   }
 
-  // ---------- detail panel ----------
   function selectComplaint(id) {
     selectedId = id;
-    const c = allComplaints.find((x) => x.id === id);
+    const c = allComplaints.find((item) => item.id === id);
     if (!c) return;
 
     document.getElementById("detailEmpty").hidden = true;
-    const content = document.getElementById("detailContent");
-    content.hidden = false;
-
+    document.getElementById("detailContent").hidden = false;
     document.getElementById("detailId").textContent = c.id;
     document.getElementById("detailCategory").textContent = c.ai_category || "General Maintenance";
     document.getElementById("detailDescription").textContent = c.description || "No description provided.";
-    document.getElementById("detailLocation").textContent =
-      typeof c.latitude === "number" ? `${c.latitude.toFixed(5)}, ${c.longitude.toFixed(5)}` : "Not tagged";
+    document.getElementById("detailLocation").textContent = typeof c.latitude === "number" ? `${c.latitude.toFixed(5)}, ${c.longitude.toFixed(5)}` : "Not tagged";
     document.getElementById("detailCreated").textContent = formatDateTime(c.created_at);
     document.getElementById("detailAcknowledged").textContent = formatDateTime(c.acknowledged_at);
     document.getElementById("detailInProgress").textContent = formatDateTime(c.in_progress_at);
     document.getElementById("detailResolved").textContent = formatDateTime(c.resolved_at);
-    const updatedEl = document.getElementById("detailUpdated");
-    if (updatedEl) updatedEl.textContent = formatDateTime(c.updated_at || c.created_at);
+    const updatedEl = document.getElementById("detailUpdated"); if (updatedEl) updatedEl.textContent = formatDateTime(c.updated_at || c.created_at);
     document.getElementById("detailSeverity").textContent = c.ai_severity || "Low";
-    const verifyEl = document.getElementById("detailVerification");
-    if (verifyEl) verifyEl.textContent = `${c.verification_count || 0} confirmations`;
-    const rootEl = document.getElementById("detailRootCause");
-    if (rootEl) rootEl.textContent = c.probable_root_cause || "Not available";
-    const estimateEl = document.getElementById("detailEstimate");
-    if (estimateEl) estimateEl.textContent = c.estimated_resolution_hours ? `${c.estimated_resolution_hours} h` : "—";
+
+    const confidenceEl = document.getElementById("detailConfidence"); if (confidenceEl) confidenceEl.textContent = c.ai_confidence_score == null ? "—" : `${Math.round(Number(c.ai_confidence_score) * 100)}%`;
+    const verifyEl = document.getElementById("detailVerification"); if (verifyEl) verifyEl.textContent = `${Number(c.verification_count || 0)} confirmation${Number(c.verification_count || 0) === 1 ? "" : "s"}`;
+    const estimateEl = document.getElementById("detailEstimate"); if (estimateEl) estimateEl.textContent = c.estimated_resolution_hours ? `${c.estimated_resolution_hours} h` : "—";
+    const basisEl = document.getElementById("detailPredictionBasis"); if (basisEl) basisEl.textContent = c.prediction_basis || "Prototype baseline";
+    const rootEl = document.getElementById("detailRootCause"); if (rootEl) rootEl.textContent = c.probable_root_cause || "Not available";
+    const factorsEl = document.getElementById("detailRootFactors"); if (factorsEl) factorsEl.textContent = (c.root_cause_factors || []).join(" · ") || "Not available";
+    const actionEl = document.getElementById("detailRecommendedAction"); if (actionEl) actionEl.textContent = c.recommended_action || "Inspect the reported location.";
 
     const priorityEl = document.getElementById("detailPriority");
     if (priorityEl) {
       priorityEl.hidden = false;
-      priorityEl.innerHTML = `<strong>Operational priority: ${priorityScore(c)}/100</strong><br>Severity + nearby report density`;
+      const score = Number(c.priority_score || 0);
+      priorityEl.innerHTML = `<strong>Operational priority: ${score}/100</strong><span>${escapeHtml(c.priority_reason || "Severity + local context")}</span>`;
+      priorityEl.classList.toggle("is-critical", score >= 85);
     }
+
     const duplicateEl = document.getElementById("detailDuplicates");
-    const duplicates = findDuplicates(c);
+    const duplicateIds = Array.isArray(c.possible_duplicate_ids) ? c.possible_duplicate_ids : [];
     if (duplicateEl) {
-      duplicateEl.hidden = duplicates.length === 0;
-      duplicateEl.innerHTML = duplicates.length ? `<strong>Potential duplicate reports (${duplicates.length})</strong>${duplicates.map(x => `<div><a href="#" data-dup-id="${x.id}">#${x.id.slice(0,8).toUpperCase()}</a> · ${x.ai_category || "Unclassified"}</div>`).join("")}` : "";
-      duplicateEl.querySelectorAll('[data-dup-id]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); selectComplaint(a.dataset.dupId); }));
+      duplicateEl.hidden = duplicateIds.length === 0;
+      duplicateEl.innerHTML = duplicateIds.length
+        ? `<strong>Potential duplicate reports (${duplicateIds.length})</strong>${duplicateIds.map((dupId) => `<div><a href="#" data-dup-id="${escapeHtml(dupId)}">#${String(dupId).slice(0, 8).toUpperCase()}</a></div>`).join("")}`
+        : `<strong>No likely duplicates detected</strong>`;
+      duplicateEl.querySelectorAll("[data-dup-id]").forEach((anchor) => anchor.addEventListener("click", (event) => { event.preventDefault(); selectComplaint(anchor.dataset.dupId); }));
     }
 
+    renderProgressTimeline(c.progress_updates || []);
     const media = document.getElementById("detailMedia");
-    if (c.media_url) {
-      media.src = c.media_url;
-      media.hidden = false;
-    } else {
-      media.hidden = true;
-    }
-
+    if (c.media_url) { media.src = c.media_url; media.hidden = false; } else { media.hidden = true; }
     document.getElementById("detailStatusSelect").value = c.status || "Pending";
     document.getElementById("detailDeptSelect").value = c.assigned_department || "Unassigned";
+    const progressInput = document.getElementById("detailProgressMessage"); if (progressInput) progressInput.value = "";
     document.getElementById("detailSaveMsg").textContent = "";
-
     applyFiltersAndRender();
     CivicPulseMap.highlight(id, allComplaints);
+  }
+
+  function renderProgressTimeline(updates) {
+    const container = document.getElementById("detailProgressTimeline");
+    if (!container) return;
+    if (!updates.length) { container.innerHTML = '<p class="muted">No progress updates yet.</p>'; return; }
+    container.innerHTML = updates.slice().reverse().map((item) => `<div class="progress-event"><span>${formatDateTime(item.timestamp)}</span><strong>${escapeHtml(item.message)}</strong><em>${escapeHtml(item.kind || "system")}</em></div>`).join("");
   }
 
   async function saveDetail() {
     if (!selectedId) return;
     const status = document.getElementById("detailStatusSelect").value;
     const assigned_department = document.getElementById("detailDeptSelect").value;
+    const progress_message = document.getElementById("detailProgressMessage")?.value.trim() || null;
     const msg = document.getElementById("detailSaveMsg");
     msg.textContent = "Saving…";
-
     try {
-      const updated = await api.updateComplaint(selectedId, { status, assigned_department });
+      const updated = await api.updateComplaint(selectedId, { status, assigned_department, progress_message });
       const idx = allComplaints.findIndex((c) => c.id === selectedId);
       if (idx !== -1) allComplaints[idx] = updated;
-      msg.textContent = "Saved.";
+      msg.textContent = "Saved and published to citizen tracking.";
       updateTicker();
       selectComplaint(selectedId);
     } catch (err) {

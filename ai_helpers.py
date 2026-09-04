@@ -6,7 +6,6 @@ import requests
 
 from vision_analyzer import VisionAnalyzer
 
-
 logger = logging.getLogger("civicpulse.ai")
 
 
@@ -31,35 +30,37 @@ CATEGORY_TO_DEPARTMENT = {
     "General Maintenance": "City Municipal Corporation",
 }
 
-
+# Specific phrases are deliberately preferred over broad terms such as "road".
+# This prevents a complaint about a traffic signal on a road from being routed to PWD.
 CATEGORY_KEYWORDS = {
     "Roads and Potholes": [
         "pothole", "road damage", "broken road", "damaged road",
-        "road", "crack", "footpath", "pavement",
+        "footpath", "pavement", "road crack", "cracked road", "uneven pavement",
+        "road surface", "road condition", "road",
     ],
     "Water Supply": [
         "water supply", "water shortage", "no water", "water leak",
-        "pipeline", "tap", "pipe burst",
+        "pipeline", "tap", "pipe burst", "low water pressure", "water pressure",
     ],
     "Electricity and Power": [
         "streetlight", "street light", "broken light", "light not working",
-        "electricity", "electric", "power outage", "power cut",
+        "electricity", "electric", "power outage", "power cut", "electric pole",
     ],
     "Waste Management": [
         "garbage", "trash", "waste", "litter", "dump", "dumping",
-        "bottle", "plastic waste",
+        "plastic waste", "overflowing bin", "waste bin",
     ],
     "Sanitation": [
         "sanitation", "sewage", "sewer", "drain", "drainage",
         "dirty water", "stagnant water", "foul smell", "toilet",
     ],
     "Traffic Issues": [
-        "traffic", "traffic signal", "signal", "stop sign",
-        "traffic light", "congestion", "parking",
+        "traffic signal", "traffic light", "stop sign", "signal timing",
+        "traffic", "congestion", "parking", "roadside parking", "traffic control",
     ],
     "Public Safety": [
         "accident", "unsafe", "danger", "crime", "security",
-        "suspicious", "public safety",
+        "suspicious", "public safety", "emergency",
     ],
 }
 
@@ -86,7 +87,6 @@ def process_civic_vision(media_input: str) -> dict:
         if os.path.exists(media_input):
             return vision_analyzer.analyze(image_path=media_input)
 
-        # Only image data URLs/raw base64 should reach the image analyzer.
         if media_input.startswith("data:image/") or not media_input.startswith("data:"):
             return vision_analyzer.analyze(image_b64=media_input)
 
@@ -97,11 +97,24 @@ def process_civic_vision(media_input: str) -> dict:
 
 
 def map_category_and_department(detected_issue: str, description: str = "") -> tuple[str, str]:
+    """Map civic text to a category using weighted phrase matching.
+
+    Longer/more specific phrases score higher than broad one-word matches.
+    This makes routing deterministic for obvious civic phrases while still
+    allowing the NLP zero-shot model to handle ambiguous free text upstream.
+    """
     issue_lower = f"{detected_issue or ''} {description or ''}".lower()
+    best_category = "General Maintenance"
+    best_score = 0.0
 
-    # Prefer explicit civic terminology before generic word matches.
     for category, keywords in CATEGORY_KEYWORDS.items():
-        if any(keyword in issue_lower for keyword in keywords):
-            return category, CATEGORY_TO_DEPARTMENT[category]
+        score = 0.0
+        for keyword in keywords:
+            if keyword in issue_lower:
+                # Specific phrases carry more weight than generic words.
+                score += 1.0 + min(len(keyword.split()) - 1, 3) * 0.9
+        if score > best_score:
+            best_score = score
+            best_category = category
 
-    return "General Maintenance", CATEGORY_TO_DEPARTMENT["General Maintenance"]
+    return best_category, CATEGORY_TO_DEPARTMENT[best_category]
