@@ -1,45 +1,42 @@
+import os
 import logging
-from typing import List
-
-from fastapi import Depends, FastAPI, HTTPException
+import tempfile
+import urllib.request
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from typing import List
 
 from database import Base, engine, get_db
 import models
 import schemas
-from ai_helpers import map_category_and_department, process_civic_vision
 
+from ai_helpers import map_category_and_department, process_civic_vision
+from nlp_processor import NLPProcessor
 
 # ---------------------------------------------------------
 # Logging
 # ---------------------------------------------------------
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("civicpulse.api")
-
 
 # ---------------------------------------------------------
 # Database
 # ---------------------------------------------------------
-
 Base.metadata.create_all(bind=engine)
-
 
 # ---------------------------------------------------------
 # FastAPI
 # ---------------------------------------------------------
-
 app = FastAPI(
     title="CivicPulse AI Core API",
     version="1.0.0",
 )
 
-
 # ---------------------------------------------------------
 # CORS
 # ---------------------------------------------------------
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -48,11 +45,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+nlp_processor = None
+try:
+    nlp_processor = NLPProcessor()
+except Exception as e:
+    logger.exception("Could not load NLPProcessor:")
+
+def process_audio_url(url: str) -> str:
+    """Helper to download audio and transcribe."""
+    if not nlp_processor:
+        return ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
+            temp_path = temp_audio.name
+        urllib.request.urlretrieve(url, temp_path)
+        text = nlp_processor.transcribe_audio(temp_path)
+        os.remove(temp_path)
+        return text
+    except Exception as e:
+        logger.exception(f"Error processing audio URL: {e}")
+        return ""
 
 # ---------------------------------------------------------
 # Create complaint
 # ---------------------------------------------------------
-
 @app.post(
     "/api/complaints",
     response_model=schemas.ComplaintResponse,
@@ -69,7 +85,7 @@ def create_complaint(
 
         Citizen data
             ↓
-        Vision AI
+        Vision & Audio AI
             ↓
         Category + department mapping
             ↓
@@ -77,42 +93,69 @@ def create_complaint(
     """
 
     # ---------------------------------------------
-    # Vision processing
+    # AI processing (Vision & NLP)
     # ---------------------------------------------
-
     ai_vision_res = {}
+    transcribed_text = ""
+    is_audio = False
 
     if payload.media_url:
-        ai_vision_res = process_civic_vision(payload.media_url)
+        is_audio = any(payload.media_url.lower().endswith(ext) for ext in [".wav", ".mp3", ".m4a", ".ogg"])
+        
+        if is_audio:
+            if os.path.exists(payload.media_url) and nlp_processor:
+                transcribed_text = nlp_processor.transcribe_audio(payload.media_url)
+            else:
+                transcribed_text = process_audio_url(payload.media_url)
+        else:
+            ai_vision_res = process_civic_vision(payload.media_url)
 
     detected_issue = ai_vision_res.get(
         "detected_issue",
         "General",
     )
 
-    ai_severity = ai_vision_res.get(
+    vision_severity = ai_vision_res.get(
         "ai_severity",
         "Low",
     )
 
-    # ---------------------------------------------
-    # Category + department
-    # ---------------------------------------------
+    # Combine text from description and audio transcription
+    combined_text = (payload.description or "")
+    if transcribed_text:
+        combined_text += f" {transcribed_text}"
+    combined_text = combined_text.strip()
 
-    ai_category, assigned_department = map_category_and_department(
-        detected_issue,
-        payload.description or "",
-    )
+    # ---------------------------------------------
+    # Category + department mapping
+    # ---------------------------------------------
+    if nlp_processor:
+        nlp_res = nlp_processor.extract_category_severity(combined_text, detected_issue)
+        ai_category = nlp_res["category"]
+        
+        # Determine final severity. Use NLP if there's text, otherwise vision
+        if combined_text:
+            ai_severity = nlp_res["severity"]
+        else:
+            ai_severity = vision_severity
+            
+        assigned_department = nlp_res["department"]
+    else:
+        # Fallback to older keyword mapping if NLP failed
+        ai_category, assigned_department = map_category_and_department(
+            detected_issue,
+            combined_text,
+        )
+        ai_severity = vision_severity
 
     # ---------------------------------------------
     # Create database record
     # ---------------------------------------------
-
     complaint = models.Complaint(
         latitude=payload.latitude,
         longitude=payload.longitude,
         media_url=payload.media_url,
-        description=payload.description,
+        description=combined_text or payload.description,
         ai_category=ai_category,
         ai_severity=ai_severity,
         status=schemas.ComplaintStatus.PENDING.value,
@@ -137,7 +180,6 @@ def create_complaint(
 # ---------------------------------------------------------
 # Get all complaints
 # ---------------------------------------------------------
-
 @app.get(
     "/api/complaints",
     response_model=List[schemas.ComplaintResponse],
@@ -155,7 +197,6 @@ def get_all_complaints(
 # ---------------------------------------------------------
 # Get one complaint
 # ---------------------------------------------------------
-
 @app.get(
     "/api/complaints/{complaint_id}",
     response_model=schemas.ComplaintResponse,
@@ -182,7 +223,6 @@ def get_complaint_by_id(
 # ---------------------------------------------------------
 # Update complaint
 # ---------------------------------------------------------
-
 @app.patch(
     "/api/complaints/{complaint_id}",
     response_model=schemas.ComplaintResponse,
@@ -223,3 +263,7 @@ def update_complaint(
     )
 
     return complaint
+
+
+# Serve Frontend
+app.mount("/", StaticFiles(directory=".", html=True), name="static")

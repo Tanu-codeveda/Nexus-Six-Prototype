@@ -34,7 +34,6 @@ def _ai_fallback() -> dict:
         "confidence_score": 0.0,
     }
 
-
 def process_civic_vision(media_input: str) -> dict:
     """
     Process an image supplied as:
