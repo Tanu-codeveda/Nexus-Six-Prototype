@@ -175,7 +175,7 @@ Nexus-Six-Prototype/
 Recommended:
 
 - Python 3.10+
-- Node.js 18+
+- Node.js 20.19+ (or Node.js 22.12+)
 - npm
 - Git
 - FFmpeg on `PATH`

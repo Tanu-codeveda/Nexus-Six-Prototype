@@ -198,7 +198,9 @@ def predict_resolution_hours(complaint: models.Complaint, all_complaints: list[m
 
     history: list[float] = []
     for item in all_complaints:
-        if item.id == complaint.id or item.status != schemas.ComplaintStatus.RESOLVED.value:
+        if item.id == complaint.id:
+            continue
+        if item.status != schemas.ComplaintStatus.RESOLVED.value:
             continue
         if item.ai_category != category or not item.created_at or not item.resolved_at:
             continue
