@@ -1,4 +1,5 @@
 import os
+import logging
 import tempfile
 import urllib.request
 from fastapi import FastAPI, Depends, HTTPException
@@ -7,16 +8,35 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
 
-from database import engine, Base, get_db
+from database import Base, engine, get_db
 import models
 import schemas
-from ai_helpers import process_civic_vision
+
+from ai_helpers import map_category_and_department, process_civic_vision
 from nlp_processor import NLPProcessor
 
+# ---------------------------------------------------------
+# Logging
+# ---------------------------------------------------------
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("civicpulse.api")
+
+# ---------------------------------------------------------
+# Database
+# ---------------------------------------------------------
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="CivicPulse AI Core API", version="1.0.0")
+# ---------------------------------------------------------
+# FastAPI
+# ---------------------------------------------------------
+app = FastAPI(
+    title="CivicPulse AI Core API",
+    version="1.0.0",
+)
 
+# ---------------------------------------------------------
+# CORS
+# ---------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,7 +49,7 @@ nlp_processor = None
 try:
     nlp_processor = NLPProcessor()
 except Exception as e:
-    print("Could not load NLPProcessor:", e)
+    logger.exception("Could not load NLPProcessor:")
 
 def process_audio_url(url: str) -> str:
     """Helper to download audio and transcribe."""
@@ -43,11 +63,38 @@ def process_audio_url(url: str) -> str:
         os.remove(temp_path)
         return text
     except Exception as e:
-        print(f"Error processing audio URL: {e}")
+        logger.exception(f"Error processing audio URL: {e}")
         return ""
 
-@app.post("/api/complaints", response_model=schemas.ComplaintResponse, status_code=201)
-def create_complaint(payload: schemas.ComplaintCreate, db: Session = Depends(get_db)):
+# ---------------------------------------------------------
+# Create complaint
+# ---------------------------------------------------------
+@app.post(
+    "/api/complaints",
+    response_model=schemas.ComplaintResponse,
+    status_code=201,
+)
+def create_complaint(
+    payload: schemas.ComplaintCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    Create a civic complaint.
+
+    Current processing pipeline:
+
+        Citizen data
+            ↓
+        Vision & Audio AI
+            ↓
+        Category + department mapping
+            ↓
+        SQLite
+    """
+
+    # ---------------------------------------------
+    # AI processing (Vision & NLP)
+    # ---------------------------------------------
     ai_vision_res = {}
     transcribed_text = ""
     is_audio = False
@@ -63,8 +110,15 @@ def create_complaint(payload: schemas.ComplaintCreate, db: Session = Depends(get
         else:
             ai_vision_res = process_civic_vision(payload.media_url)
 
-    detected_issue = ai_vision_res.get("detected_issue", "General")
-    vision_severity = ai_vision_res.get("ai_severity", "Low")
+    detected_issue = ai_vision_res.get(
+        "detected_issue",
+        "General",
+    )
+
+    vision_severity = ai_vision_res.get(
+        "ai_severity",
+        "Low",
+    )
 
     # Combine text from description and audio transcription
     combined_text = (payload.description or "")
@@ -72,6 +126,9 @@ def create_complaint(payload: schemas.ComplaintCreate, db: Session = Depends(get
         combined_text += f" {transcribed_text}"
     combined_text = combined_text.strip()
 
+    # ---------------------------------------------
+    # Category + department mapping
+    # ---------------------------------------------
     if nlp_processor:
         nlp_res = nlp_processor.extract_category_severity(combined_text, detected_issue)
         ai_category = nlp_res["category"]
@@ -82,13 +139,18 @@ def create_complaint(payload: schemas.ComplaintCreate, db: Session = Depends(get
         else:
             ai_severity = vision_severity
             
-        assigned_dept = nlp_res["department"]
+        assigned_department = nlp_res["department"]
     else:
-        # Fallback if NLPProcessor failed to load
-        ai_category = "General Maintenance"
+        # Fallback to older keyword mapping if NLP failed
+        ai_category, assigned_department = map_category_and_department(
+            detected_issue,
+            combined_text,
+        )
         ai_severity = vision_severity
-        assigned_dept = "City Municipal Corporation"
 
+    # ---------------------------------------------
+    # Create database record
+    # ---------------------------------------------
     complaint = models.Complaint(
         latitude=payload.latitude,
         longitude=payload.longitude,
@@ -96,47 +158,112 @@ def create_complaint(payload: schemas.ComplaintCreate, db: Session = Depends(get
         description=combined_text or payload.description,
         ai_category=ai_category,
         ai_severity=ai_severity,
-        status="Pending",
-        assigned_department=assigned_dept
+        status=schemas.ComplaintStatus.PENDING.value,
+        assigned_department=assigned_department,
     )
+
     db.add(complaint)
     db.commit()
     db.refresh(complaint)
+
+    logger.info(
+        "Complaint created: id=%s category=%s department=%s severity=%s",
+        complaint.id,
+        complaint.ai_category,
+        complaint.assigned_department,
+        complaint.ai_severity,
+    )
+
     return complaint
 
 
-@app.get("/api/complaints", response_model=List[schemas.ComplaintResponse])
-def get_all_complaints(db: Session = Depends(get_db)):
-    return db.query(models.Complaint).order_by(models.Complaint.created_at.desc()).all()
+# ---------------------------------------------------------
+# Get all complaints
+# ---------------------------------------------------------
+@app.get(
+    "/api/complaints",
+    response_model=List[schemas.ComplaintResponse],
+)
+def get_all_complaints(
+    db: Session = Depends(get_db),
+):
+    return (
+        db.query(models.Complaint)
+        .order_by(models.Complaint.created_at.desc())
+        .all()
+    )
 
 
-@app.get("/api/complaints/{complaint_id}", response_model=schemas.ComplaintResponse)
-def get_complaint_by_id(complaint_id: str, db: Session = Depends(get_db)):
-    """GET single complaint details by ID."""
-    complaint = db.query(models.Complaint).filter(models.Complaint.id == complaint_id).first()
+# ---------------------------------------------------------
+# Get one complaint
+# ---------------------------------------------------------
+@app.get(
+    "/api/complaints/{complaint_id}",
+    response_model=schemas.ComplaintResponse,
+)
+def get_complaint_by_id(
+    complaint_id: str,
+    db: Session = Depends(get_db),
+):
+    complaint = (
+        db.query(models.Complaint)
+        .filter(models.Complaint.id == complaint_id)
+        .first()
+    )
+
     if not complaint:
-        raise HTTPException(status_code=404, detail="Complaint not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Complaint not found",
+        )
+
     return complaint
 
 
-@app.patch("/api/complaints/{complaint_id}", response_model=schemas.ComplaintResponse)
+# ---------------------------------------------------------
+# Update complaint
+# ---------------------------------------------------------
+@app.patch(
+    "/api/complaints/{complaint_id}",
+    response_model=schemas.ComplaintResponse,
+)
 def update_complaint(
     complaint_id: str,
     update_data: schemas.ComplaintUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    complaint = db.query(models.Complaint).filter(models.Complaint.id == complaint_id).first()
+    complaint = (
+        db.query(models.Complaint)
+        .filter(models.Complaint.id == complaint_id)
+        .first()
+    )
+
     if not complaint:
-        raise HTTPException(status_code=404, detail="Complaint not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Complaint not found",
+        )
 
     if update_data.status is not None:
-        complaint.status = update_data.status
+        complaint.status = update_data.status.value
+
     if update_data.assigned_department is not None:
-        complaint.assigned_department = update_data.assigned_department
+        complaint.assigned_department = (
+            update_data.assigned_department.value
+        )
 
     db.commit()
     db.refresh(complaint)
+
+    logger.info(
+        "Complaint updated: id=%s status=%s department=%s",
+        complaint.id,
+        complaint.status,
+        complaint.assigned_department,
+    )
+
     return complaint
+
 
 # Serve Frontend
 app.mount("/", StaticFiles(directory=".", html=True), name="static")
