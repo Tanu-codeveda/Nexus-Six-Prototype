@@ -1,7 +1,4 @@
 ﻿*.pt
 *.db
 __pycache__/
-sample.wav
-.venv/
-test_audio.py
-.DS_Store
+

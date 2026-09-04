@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Float, DateTime
+
+from sqlalchemy import Column, DateTime, Float, Integer, String
+
 from database import Base
 
 
@@ -12,8 +14,24 @@ class Complaint(Base):
     longitude = Column(Float, nullable=True)
     media_url = Column(String, nullable=True)
     description = Column(String, nullable=True)
+    voice_transcript = Column(String, nullable=True)
     ai_category = Column(String, default="General Maintenance")
     ai_severity = Column(String, default="Low")
+    ai_confidence_score = Column(Float, nullable=True)
     status = Column(String, default="Pending")
     assigned_department = Column(String, default="Unassigned")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # First time each workflow state is reached.
+    acknowledged_at = Column(DateTime, nullable=True)
+    in_progress_at = Column(DateTime, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+
+    # Most recent successful workflow/assignment update.
+    updated_at = Column(DateTime, nullable=True)
+
+    # Community verification and decision-support fields.
+    verification_count = Column(Integer, default=0, nullable=False)
+    last_verified_at = Column(DateTime, nullable=True)
+    estimated_resolution_hours = Column(Integer, nullable=True)
+    probable_root_cause = Column(String, nullable=True)

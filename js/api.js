@@ -1,41 +1,31 @@
-/**
- * API client for the CivicPulse Core API (main.py).
- * Talks to:
- *   GET   /api/complaints
- *   GET   /api/complaints/{id}
- *   PATCH /api/complaints/{id}   { status?, assigned_department? }
- */
 window.CivicPulseAPI = (function () {
   async function request(path, options = {}) {
     const base = window.CivicPulseConfig.apiBase;
-    const res = await fetch(`${base}${path}`, {
-      headers: { "Content-Type": "application/json" },
-      ...options,
-    });
-    if (!res.ok) {
-      let detail = res.statusText;
+    let response;
+    try {
+      response = await fetch(`${base}${path}`, {
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        ...options,
+      });
+    } catch (error) {
+      throw new Error(`Network error connecting to ${base}`);
+    }
+    if (!response.ok) {
+      let detail = response.statusText || "Request failed";
       try {
-        const body = await res.json();
+        const body = await response.json();
         detail = body.detail || detail;
       } catch (_) {}
-      throw new Error(`${res.status} ${detail}`);
+      throw new Error(`${response.status} ${detail}`);
     }
-    if (res.status === 204) return null;
-    return res.json();
+    if (response.status === 204) return null;
+    return response.json();
   }
-
   return {
-    getComplaints() {
-      return request("/api/complaints");
-    },
-    getComplaint(id) {
-      return request(`/api/complaints/${id}`);
-    },
+    getComplaints() { return request("/api/complaints"); },
+    getComplaint(id) { return request(`/api/complaints/${encodeURIComponent(id)}`); },
     updateComplaint(id, patch) {
-      return request(`/api/complaints/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(patch),
-      });
+      return request(`/api/complaints/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
     },
   };
 })();

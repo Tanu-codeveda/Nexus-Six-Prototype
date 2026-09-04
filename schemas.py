@@ -1,13 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, field_serializer
 
-
-# ---------------------------------------------------------
-# Canonical CivicPulse values
-# ---------------------------------------------------------
 
 class ComplaintStatus(str, Enum):
     PENDING = "Pending"
@@ -33,6 +29,9 @@ class ComplaintCreate(BaseModel):
     longitude: Optional[float] = None
     media_url: Optional[str] = None
     description: Optional[str] = None
+    # Produced by the voice endpoint on the citizen device. Keeping it separate
+    # preserves the multimodal input while allowing NLP to use both signals.
+    voice_transcript: Optional[str] = None
 
 
 class ComplaintUpdate(BaseModel):
@@ -41,17 +40,60 @@ class ComplaintUpdate(BaseModel):
 
 
 class ComplaintResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     latitude: Optional[float]
     longitude: Optional[float]
     media_url: Optional[str]
     description: Optional[str]
+    voice_transcript: Optional[str] = None
     ai_category: str
     ai_severity: str
+    ai_confidence_score: Optional[float] = None
     status: str
     assigned_department: str
     created_at: Optional[datetime]
+    acknowledged_at: Optional[datetime] = None
+    in_progress_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    verification_count: int = 0
+    last_verified_at: Optional[datetime] = None
+    estimated_resolution_hours: Optional[int] = None
+    probable_root_cause: Optional[str] = None
 
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    @field_serializer(
+        "created_at",
+        "acknowledged_at",
+        "in_progress_at",
+        "resolved_at",
+        "updated_at",
+        "last_verified_at",
+        when_used="json",
+    )
+    def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
+        if value is None:
+            return None
+        # Database stores UTC as a naive value in SQLite. Make the UTC contract
+        # explicit on the wire so browsers do not display a shifted local time.
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat()
+
+
+class ComplaintVerificationResponse(BaseModel):
+    complaint_id: str
+    verification_count: int
+    last_verified_at: datetime
+
+
+class ComplaintAnalysisResponse(BaseModel):
+    detected_issue: str
+    ai_category: str
+    ai_severity: str
+    ai_confidence_score: Optional[float] = None
+    assigned_department: str
+    extracted_location: Optional[str] = None
+    estimated_resolution_hours: Optional[int] = None
+    probable_root_cause: Optional[str] = None
