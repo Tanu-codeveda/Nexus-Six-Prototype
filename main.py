@@ -67,6 +67,14 @@ def process_audio_url(url: str) -> str:
         return ""
 
 # ---------------------------------------------------------
+# Health check
+# ---------------------------------------------------------
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok", "service": "CivicPulse AI Core API"}
+
+# ---------------------------------------------------------
 # Create complaint
 # ---------------------------------------------------------
 @app.post(
