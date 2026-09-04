@@ -51,3 +51,6 @@ uvicorn==0.39.0
 zipp==3.23.1
 
 Faker==40.38.0
+openai-whisper==20250625
+spacy==3.8.11
+transformers==4.57.3

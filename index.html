@@ -33,22 +33,9 @@
 
   <div class="masthead__actions">
     <button class="btn btn--ghost" id="refreshBtn" title="Refresh reports">Refresh</button>
-    <button class="btn btn--ghost btn--icon" id="settingsBtn" title="API connection settings">⚙</button>
+    <button class="btn btn--ghost" id="exportBtn" title="Export visible reports as CSV">Export CSV</button>
   </div>
 </header>
-
-<!-- ============ SETTINGS DRAWER ============ -->
-<div class="drawer" id="settingsDrawer" hidden>
-  <div class="drawer__panel">
-    <h2>Connection</h2>
-    <label for="apiBaseInput">API base URL</label>
-    <input id="apiBaseInput" type="text" placeholder="http://localhost:8000" />
-    <div class="drawer__actions">
-      <button class="btn btn--ghost" id="settingsCancel">Cancel</button>
-      <button class="btn btn--primary" id="settingsSave">Save &amp; reconnect</button>
-    </div>
-  </div>
-</div>
 
 <!-- ============ MAIN LAYOUT ============ -->
 <main class="layout">
@@ -114,7 +101,14 @@
       <dl class="detail__meta">
         <div><dt>Location</dt><dd id="detailLocation"></dd></div>
         <div><dt>Reported</dt><dd id="detailCreated"></dd></div>
+        <div><dt>Acknowledged</dt><dd id="detailAcknowledged">—</dd></div>
+        <div><dt>In Progress</dt><dd id="detailInProgress">—</dd></div>
+        <div><dt>Resolved</dt><dd id="detailResolved">—</dd></div>
+        <div><dt>Last updated</dt><dd id="detailUpdated">—</dd></div>
         <div><dt>Severity</dt><dd id="detailSeverity"></dd></div>
+        <div><dt>Community verification</dt><dd id="detailVerification">0 confirmations</dd></div>
+        <div><dt>Projected service window</dt><dd id="detailEstimate">—</dd></div>
+        <div><dt>Probable contributing factor</dt><dd id="detailRootCause">Not available</dd></div>
       </dl>
 
       <img id="detailMedia" class="detail__media" alt="Submitted photo" hidden />
@@ -134,7 +128,7 @@
         <select id="detailDeptSelect"></select>
       </div>
 
-      <button class="btn btn--primary btn--block" id="detailSave">Save changes</button>
+      <div id="detailPriority" class="detail__insight" hidden></div><div id="detailDuplicates" class="detail__duplicates" hidden></div><button class="btn btn--primary btn--block" id="detailSave">Save changes</button>
       <p class="detail__status-msg" id="detailSaveMsg" role="status"></p>
     </div>
   </aside>
@@ -166,6 +160,15 @@
 
   <!-- ANALYTICS -->
   <section class="analytics" aria-label="Analytics">
+    <div class="analytics__head">
+      <div><h2>Operational analytics</h2><p class="analytics__sub">Live metrics from the current complaint set.</p></div>
+    </div>
+    <div class="metrics-grid" aria-label="Operational metrics">
+      <div class="metric-card"><span>Avg. acknowledgement</span><strong id="metricAck">—</strong></div>
+      <div class="metric-card"><span>Avg. resolution</span><strong id="metricResolution">—</strong></div>
+      <div class="metric-card"><span>Resolved rate</span><strong id="metricResolvedRate">—</strong></div>
+      <div class="metric-card"><span>High / critical</span><strong id="metricHighRisk">—</strong></div>
+    </div>
     <h2>Reporting trends</h2>
     <div class="analytics__grid">
       <div class="analytics__card">
@@ -188,6 +191,7 @@
   </section>
 
 </main>
+<div id="adminToast" class="admin-toast" role="status" aria-live="polite"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>

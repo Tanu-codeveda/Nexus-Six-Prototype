@@ -1,58 +1,565 @@
-import React,{useEffect,useMemo,useRef,useState} from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
-const DEMO={id:'123e4567-e89b-12d3-a456-426614174000',latitude:23.2599,longitude:77.4126,media_url:'https://storage.example.com/image.jpg',description:'Large pothole causing traffic',ai_category:'Roads & PWD',ai_severity:'High',status:'Pending',assigned_department:'Zonal Office 4'};
-const reports=[
- {display:'#CP-10284',...DEMO,description:'Large pothole causing traffic'},
- {display:'#CP-10271',id:'9c4b3e1e-7b7e-4f5b-a101-10271',description:'Broken streetlight',ai_category:'Electrical',ai_severity:'Medium',status:'Under Review',assigned_department:'Electrical Division'},
- {display:'#CP-10194',id:'1b9e3e1e-7b7e-4f5b-a101-10194',description:'Overflowing garbage bin',ai_category:'Sanitation',ai_severity:'Medium',status:'Resolved',assigned_department:'Sanitation Zone 2'}
-];
-const Icon=({name,size=20})=>{const p={stroke:'currentColor',strokeWidth:2,fill:'none',strokeLinecap:'round',strokeLinejoin:'round'};const paths={home:<><path {...p} d="m3 10 9-7 9 7"/><path {...p} d="M5 9v11h14V9"/><path {...p} d="M9 20v-6h6v6"/></>,plus:<><path {...p} d="M12 5v14M5 12h14"/></>,file:<><path {...p} d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path {...p} d="M14 2v6h6M8 13h8M8 17h6"/></>,user:<><circle {...p} cx="12" cy="8" r="3"/><path {...p} d="M5 20c.7-3.3 3-5 7-5s6.3 1.7 7 5"/></>,pin:<><path {...p} d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle {...p} cx="12" cy="10" r="2.5"/></>,camera:<><path {...p} d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle {...p} cx="12" cy="13" r="3.5"/></>,mic:<><rect {...p} x="9" y="3" width="6" height="11" rx="3"/><path {...p} d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></>,spark:<><path {...p} d="m12 3 1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6z"/><path {...p} d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z"/></>,check:<><path {...p} d="m5 12 4 4L19 6"/></>,arrow:<><path {...p} d="M5 12h14M13 6l6 6-6 6"/></>,back:<><path {...p} d="M19 12H5M11 6l-6 6 6 6"/></>,play:<><path fill="currentColor" stroke="none" d="m8 5 11 7-11 7z"/></>,info:<><circle {...p} cx="12" cy="12" r="9"/><path {...p} d="M12 10v6M12 7h.01"/></>,bell:<><path {...p} d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></>,edit:<><path {...p} d="M12 20h9"/><path {...p} d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/></>,refresh:<><path {...p} d="M20 11a8 8 0 0 0-14.8-4L3 10"/><path {...p} d="M3 5v5h5M4 13a8 8 0 0 0 14.8 4L21 14"/><path {...p} d="M21 19v-5h-5"/></>,globe:<><circle {...p} cx="12" cy="12" r="9"/><path {...p} d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></>};return <svg width={size} height={size} viewBox="0 0 24 24">{paths[name]||paths.info}</svg>};
+const RANCHI = { latitude: 23.3441, longitude: 85.3096 };
+const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
+const STORAGE_KEY = 'civicpulse.myReportIds';
 
-function App(){
- const [screen,setScreen]=useState('home');
- const [complaint,setComplaint]=useState({...DEMO});
- const [photo,setPhoto]=useState(null); const [voiceUrl,setVoiceUrl]=useState(null); const [recording,setRecording]=useState(false); const [seconds,setSeconds]=useState(0); const recorder=useRef(null); const timer=useRef(null);
- const [locationState,setLocationState]=useState('ready'); const [aiProgress,setAiProgress]=useState(0); const [modal,setModal]=useState(null); const [toast,setToast]=useState(''); const [lang,setLang]=useState('English');
- const showToast=m=>{setToast(m);setTimeout(()=>setToast(''),2500)};
- const getLocation=()=>{setLocationState('loading'); if(navigator.geolocation){navigator.geolocation.getCurrentPosition(pos=>{setComplaint(c=>({...c,latitude:+pos.coords.latitude.toFixed(4),longitude:+pos.coords.longitude.toFixed(4)}));setLocationState('ready')},()=>{setComplaint(c=>({...c,latitude:23.2599,longitude:77.4126}));setLocationState('demo')},{enableHighAccuracy:true,timeout:5000})}else{setLocationState('demo')}};
- useEffect(()=>{if(screen==='report')getLocation()},[screen]);
- useEffect(()=>()=>{clearInterval(timer.current);if(recorder.current?.stream)recorder.current.stream.getTracks().forEach(t=>t.stop())},[]);
- const handlePhoto=e=>{const f=e.target.files?.[0];if(!f)return;setPhoto(URL.createObjectURL(f));setComplaint(c=>({...c,media_url:URL.createObjectURL(f)}));showToast('Photo added')};
- const startRecording=async()=>{try{if(!navigator.mediaDevices?.getUserMedia)throw new Error();const stream=await navigator.mediaDevices.getUserMedia({audio:true});const r=new MediaRecorder(stream);const chunks=[];r.ondataavailable=e=>e.data.size&&chunks.push(e.data);r.onstop=()=>{const blob=new Blob(chunks,{type:r.mimeType||'audio/webm'});setVoiceUrl(URL.createObjectURL(blob));stream.getTracks().forEach(t=>t.stop());};r.start();recorder.current=r;setRecording(true);setSeconds(0);timer.current=setInterval(()=>setSeconds(s=>{if(s>=4){stopRecording();return 5}return s+1}),1000)}catch{showToast('Microphone unavailable — demo voice note added');setSeconds(5);setVoiceUrl('demo')}};
- const stopRecording=()=>{clearInterval(timer.current);if(recorder.current&&recorder.current.state!=='inactive')recorder.current.stop();setRecording(false);setSeconds(5)};
- const analyze=()=>{setScreen('analysis');setAiProgress(0);let n=0;const id=setInterval(()=>{n++;setAiProgress(n);if(n>=6){clearInterval(id);setTimeout(()=>setScreen('result'),450)}},420)};
- const submit=()=>{setScreen('submitting');setTimeout(()=>setScreen('success'),1100)};
- const resetReport=()=>{setComplaint({...DEMO});setPhoto(null);setVoiceUrl(null);setSeconds(0);setScreen('report')};
- const nav=s=>{setScreen(s)};
- return <div className="app-shell"><div className="app-frame">
-   {screen==='home'&&<Home nav={nav} lang={lang}/>} {screen==='report'&&<Report complaint={complaint} setComplaint={setComplaint} photo={photo} onPhoto={handlePhoto} recording={recording} seconds={seconds} start={startRecording} stop={stopRecording} voiceUrl={voiceUrl} locationState={locationState} getLocation={getLocation} next={()=>nav('evidence')} />}
-   {screen==='evidence'&&<Evidence complaint={complaint} photo={photo} voiceUrl={voiceUrl} seconds={seconds} recording={recording} start={startRecording} stop={stopRecording} analyze={analyze}/>} {screen==='analysis'&&<Analysis progress={aiProgress}/>} {screen==='result'&&<Result complaint={complaint} review={()=>nav('review')}/>} {screen==='review'&&<Review complaint={complaint} photo={photo} seconds={seconds} edit={()=>nav('report')} submit={submit}/>} {screen==='submitting'&&<Submitting/>} {screen==='success'&&<Success track={()=>nav('tracking')} home={()=>nav('home')}/>} {screen==='tracking'&&<Tracking complaint={complaint} modal={modal} setModal={setModal}/>} {screen==='reports'&&<MyReports nav={nav}/>} {screen==='profile'&&<Profile lang={lang} setLang={setLang} showToast={showToast}/>} 
-   {!['analysis','submitting'].includes(screen)&&<BottomNav screen={screen} nav={nav} reset={resetReport}/>} {toast&&<div className="toast">{toast}</div>} {modal==='nearby'&&<Modal close={()=>setModal(null)}/>} 
- </div></div>
+const EMPTY_COMPLAINT = {
+  id: null,
+  ...RANCHI,
+  media_url: null,
+  description: '',
+  voice_transcript: '',
+  ai_category: 'Not analyzed',
+  ai_severity: 'Not analyzed',
+  ai_confidence_score: null,
+  status: 'Pending',
+  assigned_department: 'Pending AI analysis',
+};
+
+const readStoredReportIds = () => {
+  try {
+    const ids = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    return Array.isArray(ids) ? ids : [];
+  } catch {
+    return [];
+  }
+};
+
+const rememberReportId = (id) => {
+  if (!id) return;
+  try {
+    const ids = readStoredReportIds().filter((value) => value !== id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([id, ...ids].slice(0, 50)));
+  } catch {
+    // LocalStorage is optional for the prototype.
+  }
+};
+
+const hasReportContent = (description, photo, voiceDataUrl) =>
+  Boolean((description || '').trim() || photo || voiceDataUrl);
+
+const Icon = ({ name, size = 20 }) => {
+  const p = {
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    fill: 'none',
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+  };
+  const paths = {
+    home: <><path {...p} d="m3 10 9-7 9 7" /><path {...p} d="M5 9v11h14V9" /><path {...p} d="M9 20v-6h6v6" /></>,
+    plus: <><path {...p} d="M12 5v14M5 12h14" /></>,
+    file: <><path {...p} d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path {...p} d="M14 2v6h6M8 13h8M8 17h6" /></>,
+    user: <><circle {...p} cx="12" cy="8" r="3" /><path {...p} d="M5 20c.7-3.3 3-5 7-5s6.3 1.7 7 5" /></>,
+    pin: <><path {...p} d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle {...p} cx="12" cy="10" r="2.5" /></>,
+    camera: <><path {...p} d="M4 7h3l1.5-2h7L17 7h3v12H4z" /><circle {...p} cx="12" cy="13" r="3.5" /></>,
+    mic: <><rect {...p} x="9" y="3" width="6" height="11" rx="3" /><path {...p} d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" /></>,
+    spark: <><path {...p} d="m12 3 1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6z" /><path {...p} d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z" /></>,
+    check: <><path {...p} d="m5 12 4 4L19 6" /></>,
+    arrow: <><path {...p} d="M5 12h14M13 6l6 6-6 6" /></>,
+    back: <><path {...p} d="M19 12H5M11 6l-6 6 6 6" /></>,
+    play: <><path fill="currentColor" stroke="none" d="m8 5 11 7-11 7z" /></>,
+    info: <><circle {...p} cx="12" cy="12" r="9" /><path {...p} d="M12 10v6M12 7h.01" /></>,
+    bell: <><path {...p} d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></>,
+    edit: <><path {...p} d="M12 20h9" /><path {...p} d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z" /></>,
+    refresh: <><path {...p} d="M20 11a8 8 0 0 0-14.8-4L3 10" /><path {...p} d="M3 5v5h5M4 13a8 8 0 0 0 14.8 4L21 14" /><path {...p} d="M21 19v-5h-5" /></>,
+    globe: <><circle {...p} cx="12" cy="12" r="9" /><path {...p} d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></>,
+  };
+  return <svg width={size} height={size} viewBox="0 0 24 24">{paths[name] || paths.info}</svg>;
+};
+
+function App() {
+  const [screen, setScreen] = useState('home');
+  const [complaint, setComplaint] = useState({ ...EMPTY_COMPLAINT });
+  const [writtenDescription, setWrittenDescription] = useState('');
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [photo, setPhoto] = useState(null);
+  const [voiceUrl, setVoiceUrl] = useState(null);
+  const [voiceDataUrl, setVoiceDataUrl] = useState(null);
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const [locationState, setLocationState] = useState('ready');
+  const [aiProgress, setAiProgress] = useState(0);
+  const [aiError, setAiError] = useState('');
+  const [modal, setModal] = useState(null);
+  const [toast, setToast] = useState('');
+  const [lang, setLang] = useState('English');
+  const recorder = useRef(null);
+  const timer = useRef(null);
+  const recordingStartedAt = useRef(0);
+  const toastTimer = useRef(null);
+
+  const showToast = (message) => {
+    setToast(message);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 2800);
+  };
+
+  const getLocation = () => {
+    setLocationState('loading');
+    if (!navigator.geolocation) {
+      setComplaint((current) => ({ ...current, ...RANCHI }));
+      setLocationState('demo');
+      showToast('Location unavailable — using Ranchi demo location');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setComplaint((current) => ({
+          ...current,
+          latitude: Number(position.coords.latitude.toFixed(6)),
+          longitude: Number(position.coords.longitude.toFixed(6)),
+        }));
+        setLocationState('ready');
+      },
+      (error) => {
+        console.warn('Geolocation failed:', error?.message || error);
+        setComplaint((current) => ({ ...current, ...RANCHI }));
+        setLocationState('demo');
+        showToast(
+          error?.code === 1
+            ? 'Location permission denied — using Ranchi demo location'
+            : 'Could not detect location — using Ranchi demo location'
+        );
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
+  };
+
+  useEffect(() => {
+    if (screen === 'report') getLocation();
+  }, [screen]);
+
+  useEffect(() => () => {
+    clearInterval(timer.current);
+    clearTimeout(toastTimer.current);
+    if (recorder.current?.stream) {
+      recorder.current.stream.getTracks().forEach((track) => track.stop());
+    }
+  }, []);
+
+  const handlePhoto = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const previewUrl = URL.createObjectURL(file);
+    setPhoto(previewUrl);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setComplaint((current) => ({ ...current, media_url: String(reader.result || '') }));
+      showToast('Photo added');
+    };
+    reader.onerror = () => {
+      URL.revokeObjectURL(previewUrl);
+      setPhoto(null);
+      setComplaint((current) => ({ ...current, media_url: null }));
+      showToast('Could not read the selected photo');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const stopRecording = () => {
+    clearInterval(timer.current);
+    timer.current = null;
+    const currentRecorder = recorder.current;
+    if (currentRecorder && currentRecorder.state !== 'inactive') {
+      currentRecorder.stop();
+    }
+    setRecording(false);
+  };
+
+  const startRecording = async () => {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error('MediaRecorder unavailable');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const currentRecorder = new MediaRecorder(stream);
+      const chunks = [];
+      currentRecorder.ondataavailable = (event) => {
+        if (event.data.size) chunks.push(event.data);
+      };
+      currentRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: currentRecorder.mimeType || 'audio/webm' });
+        const objectUrl = URL.createObjectURL(blob);
+        setVoiceUrl(objectUrl);
+        const reader = new FileReader();
+        reader.onload = () => setVoiceDataUrl(String(reader.result || ''));
+        reader.onerror = () => {
+          setVoiceDataUrl(null);
+          showToast('Could not prepare voice note for upload');
+        };
+        reader.readAsDataURL(blob);
+        stream.getTracks().forEach((track) => track.stop());
+      };
+      currentRecorder.start();
+      recorder.current = currentRecorder;
+      recordingStartedAt.current = Date.now();
+      setRecording(true);
+      setVoiceDataUrl(null);
+      setVoiceTranscript('');
+      setSeconds(0);
+      clearInterval(timer.current);
+      timer.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - recordingStartedAt.current) / 1000);
+        setSeconds(Math.min(elapsed, 5));
+        if (elapsed >= 5) stopRecording();
+      }, 100);
+    } catch (error) {
+      console.error('Microphone error:', error);
+      showToast('Microphone unavailable — no voice note recorded');
+    }
+  };
+
+  const analyze = async () => {
+    if (!hasReportContent(writtenDescription, photo, voiceDataUrl)) {
+      showToast('Add a description, photo, or voice note first.');
+      return;
+    }
+    setAiError('');
+    setAiProgress(0);
+    setScreen('analysis');
+
+    try {
+      let transcript = voiceTranscript;
+      if (voiceDataUrl && !transcript) {
+        setAiProgress(2);
+        const voiceResponse = await fetch(`${API_BASE}/api/transcribe-audio`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audio_data_url: voiceDataUrl }),
+        });
+        const voiceData = await voiceResponse.json().catch(() => ({}));
+        if (!voiceResponse.ok) throw new Error(voiceData.detail || `Voice transcription failed (${voiceResponse.status})`);
+        transcript = voiceData.text || '';
+        setVoiceTranscript(transcript);
+      }
+
+      setAiProgress(3);
+      const response = await fetch(`${API_BASE}/api/analyze-complaint`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          latitude: complaint.latitude,
+          longitude: complaint.longitude,
+          media_url: complaint.media_url || null,
+          description: writtenDescription,
+          voice_transcript: transcript || null,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || `Analysis failed (${response.status})`);
+
+      setAiProgress(6);
+      setComplaint((current) => ({ ...current, ...data }));
+      setTimeout(() => setScreen('result'), 350);
+    } catch (error) {
+      console.error('Complaint analysis failed:', error);
+      setAiError(error.message || 'Could not analyze the report.');
+    }
+  };
+
+  const submit = async () => {
+    if (!hasReportContent(writtenDescription, photo, voiceDataUrl)) {
+      showToast('Add a description, photo, or voice note before submitting.');
+      setScreen('review');
+      return;
+    }
+    setScreen('submitting');
+    try {
+      let transcript = voiceTranscript;
+      if (voiceDataUrl && !transcript) {
+        const voiceResponse = await fetch(`${API_BASE}/api/transcribe-audio`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audio_data_url: voiceDataUrl }),
+        });
+        const voiceData = await voiceResponse.json().catch(() => ({}));
+        if (!voiceResponse.ok) throw new Error(voiceData.detail || `Voice transcription failed (${voiceResponse.status})`);
+        transcript = voiceData.text || '';
+        setVoiceTranscript(transcript);
+      }
+
+      const response = await fetch(`${API_BASE}/api/complaints`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          latitude: complaint.latitude,
+          longitude: complaint.longitude,
+          media_url: complaint.media_url || null,
+          description: writtenDescription,
+          voice_transcript: transcript || null,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`);
+
+      setComplaint((current) => ({ ...current, ...data }));
+      rememberReportId(data.id);
+      setScreen('success');
+    } catch (error) {
+      console.error('Complaint submission failed:', error);
+      setScreen('review');
+      showToast(error.message || 'Could not submit report. Please try again.');
+    }
+  };
+
+  const resetReport = () => {
+    clearInterval(timer.current);
+    if (recorder.current?.state !== 'inactive') recorder.current?.stop();
+    setComplaint({ ...EMPTY_COMPLAINT });
+    setWrittenDescription('');
+    setVoiceTranscript('');
+    setPhoto(null);
+    setVoiceUrl(null);
+    setVoiceDataUrl(null);
+    setRecording(false);
+    setSeconds(0);
+    setAiError('');
+    setAiProgress(0);
+    setScreen('report');
+  };
+
+  const nav = (nextScreen) => setScreen(nextScreen);
+  const openTracking = (report) => {
+    setComplaint((current) => ({ ...current, ...report }));
+    setScreen('tracking');
+  };
+
+  return (
+    <div className="app-shell">
+      <div className="app-frame">
+        {screen === 'home' && <Home nav={nav} />}
+        {screen === 'report' && (
+          <Report
+            canContinue={hasReportContent(writtenDescription, photo, voiceDataUrl)}
+            complaint={complaint}
+            setComplaint={setComplaint}
+            setWrittenDescription={setWrittenDescription}
+            photo={photo}
+            onPhoto={handlePhoto}
+            recording={recording}
+            seconds={seconds}
+            start={startRecording}
+            stop={stopRecording}
+            voiceUrl={voiceUrl}
+            locationState={locationState}
+            getLocation={getLocation}
+            next={() => nav('evidence')}
+          />
+        )}
+        {screen === 'evidence' && (
+          <Evidence
+            complaint={complaint}
+            photo={photo}
+            voiceUrl={voiceUrl}
+            seconds={seconds}
+            recording={recording}
+            start={startRecording}
+            stop={stopRecording}
+            analyze={analyze}
+          />
+        )}
+        {screen === 'analysis' && <Analysis progress={aiProgress} error={aiError} retry={analyze} />}
+        {screen === 'result' && <Result complaint={complaint} writtenDescription={writtenDescription} voiceTranscript={voiceTranscript} review={() => nav('review')} />}
+        {screen === 'review' && <Review complaint={complaint} writtenDescription={writtenDescription} voiceTranscript={voiceTranscript} photo={photo} seconds={seconds} edit={() => nav('report')} submit={submit} />}
+        {screen === 'submitting' && <Submitting />}
+        {screen === 'success' && <Success complaint={complaint} track={() => nav('tracking')} home={() => nav('home')} />}
+        {screen === 'tracking' && <Tracking complaint={complaint} setComplaint={setComplaint} setModal={setModal} />}
+        {screen === 'reports' && <MyReports openTracking={openTracking} />}
+        {screen === 'profile' && <Profile lang={lang} setLang={setLang} showToast={showToast} />}
+        {!['analysis', 'submitting'].includes(screen) && <BottomNav screen={screen} nav={nav} reset={resetReport} />}
+        {toast && <div className="toast">{toast}</div>}
+        {modal === 'nearby' && <Modal close={() => setModal(null)} />}
+      </div>
+    </div>
+  );
 }
 
-const Header=({title,back})=><header className="topbar">{back?<button className="icon-btn" onClick={back}><Icon name="back"/></button>:<div className="brand-mark">CP</div>}<div><div className="brand">CivicPulse <span>AI</span></div>{title&&<div className="subhead">{title}</div>}</div>{!back&&<button className="icon-btn"><Icon name="bell"/></button>}</header>;
-const BottomNav=({screen,nav,reset})=><nav className="bottom-nav"><button className={screen==='home'?'active':''} onClick={()=>nav('home')}><Icon name="home"/><span>Home</span></button><button className={['report','evidence','analysis','result','review'].includes(screen)?'active report-tab':''} onClick={reset}><span className="report-orb"><Icon name="plus"/></span><span>Report</span></button><button className={screen==='reports'?'active':''} onClick={()=>nav('reports')}><Icon name="file"/><span>My Reports</span></button><button className={screen==='profile'?'active':''} onClick={()=>nav('profile')}><Icon name="user"/><span>Profile</span></button></nav>;
-const Button=({children,onClick,secondary=false,disabled=false,icon})=><button disabled={disabled} className={'primary-btn '+(secondary?'secondary':'')} onClick={onClick}>{children}{icon&&<Icon name="arrow" size={18}/>}</button>;
-const Status=({children})=><span className={'status '+String(children).toLowerCase().replaceAll(' ','-')}>{children}</span>;
-const MapCard=({lat,lon})=><div className="map"><div className="map-grid"></div><div className="road r1"></div><div className="road r2"></div><div className="road r3"></div><div className="map-pin"><Icon name="pin" size={26}/></div><div className="coords">{lat.toFixed(4)}, {lon.toFixed(4)}</div></div>;
-const Stepper=({active})=><div className="stepper">{['Details','Evidence','AI Review','Submit'].map((x,i)=><React.Fragment key={x}><div className={'step '+(i<active?'done ':'')+(i===active?'current':'')}><span>{i<active?'✓':i+1}</span>{x}</div>{i<3&&<div className="step-line"/>}</React.Fragment>)}</div>;
+const Header = ({ title, back }) => (
+  <header className="topbar">
+    {back ? <button className="icon-btn" onClick={back}><Icon name="back" /></button> : <div className="brand-mark">CP</div>}
+    <div><div className="brand">CivicPulse <span>AI</span></div>{title && <div className="subhead">{title}</div>}</div>
+    {!back && <button className="icon-btn" aria-label="Notifications"><Icon name="bell" /></button>}
+  </header>
+);
 
-function Home({nav}){return <div className="page"><Header/><main><section className="welcome"><p className="eyebrow">GOOD MORNING</p><h1>Help make your city <em>better.</em></h1><p className="muted">Spot a civic issue? Report it in seconds and let AI route it to the right team.</p><Button onClick={()=>nav('report')} icon>Report an Issue</Button></section><section className="impact"><div><b>8</b><span>Reports submitted</span></div><div><b>5</b><span>Issues resolved</span></div><div><b>12</b><span>Community verifications</span></div></section><section className="section-head"><h2>Nearby civic issues</h2><button onClick={()=>nav('reports')}>View all</button></section><div className="issue-list"><Issue icon="Road" title="Large pothole" dept="Roads & PWD" severity="High"/><Issue icon="Light" title="Broken streetlight" dept="Electrical" severity="Medium"/><Issue icon="Bin" title="Overflowing garbage" dept="Sanitation" severity="Medium"/></div><section className="ai-banner"><div className="ai-icon"><Icon name="spark"/></div><div><b>From report to resolution</b><p>Report → AI understands → Department assigned → Track</p></div></section></main></div>}
-const Issue=({icon,title,dept,severity})=><div className="issue-card"><div className="issue-icon">{icon==='Road'?'▰':icon==='Light'?'◉':'▦'}</div><div className="issue-copy"><b>{title}</b><span>{dept}</span></div><Status>{severity}</Status></div>;
-function Report({complaint,setComplaint,photo,onPhoto,recording,seconds,start,stop,voiceUrl,locationState,getLocation,next}){return <div className="page"><Header title="Report an Issue" back={()=>location.reload()}/><main><Stepper active={0}/><div className="screen-title"><p className="eyebrow">STEP 1 OF 4</p><h1>What happened?</h1><p className="muted">Tell us what you noticed. Add evidence to help us act faster.</p></div><label className="field-label">Description</label><textarea value={complaint.description} onChange={e=>setComplaint(c=>({...c,description:e.target.value}))} className="textarea" placeholder="Describe the issue..."/><div className="evidence-actions"><label className="evidence-btn"><input type="file" accept="image/*" capture="environment" onChange={onPhoto}/><span><Icon name="camera"/>Add Photo</span></label><button className={'evidence-btn '+(recording?'recording':'')} onClick={recording?stop:start}><Icon name="mic"/><span>{recording?`Recording 0${seconds}s`:'Record Voice'}</span></button></div>{photo&&<img className="photo-preview small" src={photo}/>} {voiceUrl&&<div className="voice-chip"><span className="pulse-dot"></span><span>Voice note</span><b>00:{String(seconds).padStart(2,'0')}</b></div>}<div className="section-head location-head"><h2>Issue location</h2><button onClick={getLocation}><Icon name="refresh" size={16}/> Refresh</button></div><div className="location-card"><div className="loc-row"><div className="loc-icon"><Icon name="pin"/></div><div><b>{locationState==='loading'?'Detecting location…':locationState==='demo'?'Demo location':'Location captured'}</b><span>{complaint.latitude.toFixed(4)}, {complaint.longitude.toFixed(4)}</span></div><span className="loc-ok">✓</span></div><MapCard lat={complaint.latitude} lon={complaint.longitude}/></div><Button onClick={next} icon>Continue</Button><p className="privacy"><Icon name="info" size={15}/> Location is used only to identify the responsible civic department.</p></main></div>}
-function Evidence({complaint,photo,voiceUrl,seconds,recording,start,stop,analyze}){return <div className="page"><Header title="Add Evidence" back={()=>history.back()}/><main><Stepper active={1}/><div className="screen-title"><p className="eyebrow">STEP 2 OF 4</p><h1>Strengthen your report</h1><p className="muted">Evidence helps CivicPulse AI understand the issue with greater context.</p></div><div className="evidence-card"><div className="card-top"><b>Photo evidence</b><span className="tag success">Added</span></div>{photo?<img className="photo-preview" src={photo}/>:<div className="photo-placeholder"><Icon name="camera" size={32}/><b>Demo photo</b><span>Use the report image preview</span></div>}</div><div className="evidence-card"><div className="card-top"><b>Voice note</b><span className="tag">{voiceUrl?'00:05':'Optional'}</span></div><div className="voice-row"><button className="play-btn" onClick={recording?stop:start}><Icon name={recording?'check':'play'} size={18}/></button><div className="wave">{Array.from({length:28},(_,i)=><i key={i} style={{height:(10+(i*17)%22)+'px'}}></i>)}</div><span>00:{String(seconds||5).padStart(2,'0')}</span></div><small>Voice is converted to text and used as AI input.</small></div><MapCard lat={complaint.latitude} lon={complaint.longitude}/><Button onClick={analyze} icon>Analyze with AI</Button></main></div>}
-function Analysis({progress}){const steps=['Reading complaint','Converting voice to text','Analyzing image','Identifying category','Assessing severity','Finding responsible department'];return <div className="center-page"><div className="ai-loader"><div className="ai-ring"><Icon name="spark" size={34}/></div><div className="eyebrow">CIVICPULSE AI</div><h1>Understanding your report</h1><p>Combining description, image and location context.</p></div><div className="analysis-list">{steps.map((s,i)=><div className={'analysis-step '+(i<progress?'done':i===progress?'active':'')} key={s}><span>{i<progress?'✓':i===progress?<span className="mini-spinner"/>:i+1}</span>{s}{i<progress&&<b>Done</b>}</div>)}</div><div className="progress-track"><div style={{width:(progress/6*100)+'%'}}></div></div><p className="muted center">AI analysis runs locally in this demo.</p></div>}
-function Result({complaint,review}){return <div className="page"><Header title="AI Results" back={()=>history.back()}/><main><div className="result-hero"><div className="check-ring"><Icon name="spark" size={25}/></div><p className="eyebrow">ANALYSIS COMPLETE</p><h1>High-priority road safety issue</h1><p>AI found a road hazard that may affect traffic and pedestrian safety.</p></div><div className="insight-card"><div className="insight-top"><span className="ai-icon mini"><Icon name="spark" size={17}/></span><div><b>CivicPulse AI decision</b><span>Multimodal analysis</span></div><span className="confidence">92%</span></div><div className="result-grid"><Info label="Category" value={complaint.ai_category}/><Info label="Severity" value={<Status>High</Status>}/><Info label="Department" value={complaint.assigned_department}/><Info label="Status" value={<Status>Pending</Status>}/></div></div><div className="detail-card"><Info label="Description" value={complaint.description}/><Info label="Location" value={`${complaint.latitude.toFixed(4)}, ${complaint.longitude.toFixed(4)}`}/></div><div className="similar"><div className="similar-icon">3</div><div><b>Similar reports nearby</b><p>3 reports detected in the surrounding area.</p></div><span>›</span></div><div className="explain"><Icon name="spark" size={18}/><span>CivicPulse AI combined image evidence, citizen description and location context to classify and prioritize this complaint.</span></div><Button onClick={review} icon>Review Report</Button></main></div>}
-const Info=({label,value})=><div className="info"><span>{label}</span><b>{value}</b></div>;
-function Review({complaint,photo,seconds,edit,submit}){return <div className="page"><Header title="Review & Submit" back={edit}/><main><Stepper active={2}/><div className="screen-title"><p className="eyebrow">STEP 3 OF 4</p><h1>Review your report</h1><p className="muted">Everything looks ready. You can edit any detail before submitting.</p></div><div className="review-card"><ReviewRow label="Description" value={complaint.description}/><ReviewRow label="Category" value={complaint.ai_category}/><ReviewRow label="Severity" value={<Status>High</Status>}/><ReviewRow label="Location" value={`${complaint.latitude.toFixed(4)}, ${complaint.longitude.toFixed(4)}`}/><ReviewRow label="Department" value={complaint.assigned_department}/><ReviewRow label="Status" value={<Status>Pending</Status>}/></div>{photo&&<img className="photo-preview small" src={photo}/>}<div className="voice-chip"><span className="pulse-dot"></span><span>Voice note</span><b>00:{String(seconds||5).padStart(2,'0')}</b></div><button className="edit-link" onClick={edit}><Icon name="edit" size={16}/> Edit details</button><Button onClick={submit}>Submit Report</Button><button className="draft" onClick={()=>alert('Draft saved for this demo.')}>Save as Draft</button></main></div>}
-const ReviewRow=({label,value})=><div className="review-row"><span>{label}</span><b>{value}</b></div>;
-const Submitting=()=> <div className="center-page"><div className="submit-loader"><span></span><span></span><span></span></div><h1>Submitting your report…</h1><p>Creating a trackable civic ticket.</p></div>;
-function Success({track,home}){return <div className="center-page success-page"><div className="success-ring"><Icon name="check" size={38}/></div><p className="eyebrow">REPORT SUBMITTED</p><h1>Your civic issue is now on the radar.</h1><p>Your report has been sent to the responsible department. We'll notify you when the status changes.</p><div className="success-ticket"><span>Report ID</span><b>#CP-10284</b><div><span>Roads & PWD</span><Status>Pending</Status></div></div><Button onClick={track} icon>Track My Report</Button><button className="text-btn" onClick={home}>Back to Home</button></div>}
-function Tracking({complaint,setModal}){const stages=['Report Submitted','AI Analysis Completed','Department Assigned','Pending','Under Review','Resolution','Resolved'];return <div className="page"><Header title="Track Report" back={()=>history.back()}/><main><div className="track-head"><div><p className="eyebrow">#CP-10284</p><h1>Large pothole causing traffic</h1><span className="muted">Roads & PWD · High priority</span></div><Status>Pending</Status></div><div className="detail-card compact"><Info label="Location" value={`${complaint.latitude.toFixed(4)}, ${complaint.longitude.toFixed(4)}`}/><Info label="Assigned department" value="Zonal Office 4"/></div><div className="timeline">{stages.map((s,i)=><div className={'timeline-item '+(i<3?'done ':'')+(i===3?'current':'')} key={s}><div className="timeline-dot">{i<3?'✓':i===3?'•':''}</div><div><b>{s}</b>{i===3&&<span>Awaiting field review</span>}</div></div>)}</div><div className="estimate"><span className="ai-icon mini"><Icon name="spark" size={16}/></span><div><b>AI Resolution Estimate</b><p>Expected update within 2–3 days.</p></div></div><div className="community"><div className="avatars"><span>AK</span><span>RM</span><span>+1</span></div><div><b>Community verification</b><p>3 nearby citizens reported similar issues.</p></div><button onClick={()=>setModal('nearby')}>View</button></div></main></div>}
-function MyReports({nav}){return <div className="page"><Header title="My Reports"/><main><div className="screen-title"><p className="eyebrow">YOUR ACTIVITY</p><h1>Reports</h1><p className="muted">Keep track of every issue you’ve raised.</p></div><div className="filter-row"><button className="selected">All <span>3</span></button><button>Pending <span>1</span></button><button>Resolved <span>1</span></button></div><div className="reports-list">{reports.map((r,i)=><button className="report-card" key={r.display} onClick={()=>i===0?nav('tracking'):null}><div className="report-card-top"><span className="report-number">{r.display}</span><Status>{r.status}</Status></div><h3>{r.description}</h3><p>{r.ai_category} · {r.assigned_department}</p><div className="report-card-foot"><span>{r.latitude?.toFixed(4)||'23.2599'}, {r.longitude?.toFixed(4)||'77.4126'}</span><Icon name="arrow" size={16}/></div></button>)}</div></main></div>}
-function Profile({lang,setLang,showToast}){return <div className="page"><Header title="Profile"/><main><div className="profile-head"><div className="avatar">DC</div><div><h1>Demo Citizen</h1><p className="muted">CivicPulse member</p></div></div><Setting title="Notifications" icon="bell"><Toggle on={true} onChange={()=>showToast('Notifications toggled')}/></Setting><Setting title="Location permission" icon="pin"><span className="setting-value">Enabled</span></Setting><Setting title="Language" icon="globe"><div className="lang-toggle"><button className={lang==='English'?'selected':''} onClick={()=>setLang('English')}>English</button><button className={lang==='Hindi'?'selected':''} onClick={()=>setLang('Hindi')}>हिन्दी</button></div></Setting><div className="setting-section"><h3>Accessibility</h3><Setting title="Large text" icon="info"><Toggle/></Setting><Setting title="High contrast" icon="spark"><Toggle/></Setting><Setting title="Voice-first reporting" icon="mic"><Toggle on={true}/></Setting></div><div className="setting-section"><h3>Privacy</h3><p className="muted small-text">Data access and processing follow applicable consent, privacy and data-governance requirements.</p></div></main></div>}
-const Setting=({title,icon,children})=><div className="setting"><div className="setting-left"><span className="setting-icon"><Icon name={icon} size={17}/></span><b>{title}</b></div>{children}</div>;
-const Toggle=({on=false,onChange})=><button className={'toggle '+(on?'on':'')} onClick={onChange}><span/></button>;
-function Modal({close}){return <div className="modal-backdrop" onClick={close}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal-grab"></div><div className="modal-head"><div><p className="eyebrow">NEARBY INTELLIGENCE</p><h2>Similar reports</h2></div><button className="icon-btn" onClick={close}>×</button></div><div className="nearby-item"><div className="mini-map"><Icon name="pin"/></div><div><b>Pothole near Main Road</b><p>0.2 km · Roads & PWD</p></div><Status>High</Status></div><div className="nearby-item"><div className="mini-map"><Icon name="pin"/></div><div><b>Road surface damage</b><p>0.4 km · Roads & PWD</p></div><Status>Medium</Status></div><Button onClick={close}>Done</Button></div></div>}
+const BottomNav = ({ screen, nav, reset }) => (
+  <nav className="bottom-nav">
+    <button className={screen === 'home' ? 'active' : ''} onClick={() => nav('home')}><Icon name="home" /><span>Home</span></button>
+    <button className={['report', 'evidence', 'analysis', 'result', 'review'].includes(screen) ? 'active report-tab' : ''} onClick={reset}><span className="report-orb"><Icon name="plus" /></span><span>Report</span></button>
+    <button className={screen === 'reports' ? 'active' : ''} onClick={() => nav('reports')}><Icon name="file" /><span>My Reports</span></button>
+    <button className={screen === 'profile' ? 'active' : ''} onClick={() => nav('profile')}><Icon name="user" /><span>Profile</span></button>
+  </nav>
+);
+
+const Button = ({ children, onClick, secondary = false, disabled = false, icon }) => (
+  <button disabled={disabled} className={`primary-btn ${secondary ? 'secondary' : ''}`} onClick={onClick}>{children}{icon && <Icon name="arrow" size={18} />}</button>
+);
+
+const Status = ({ children }) => <span className={`status ${String(children).toLowerCase().replaceAll(' ', '-')}`}>{children}</span>;
+
+const MapCard = ({ lat = RANCHI.latitude, lon = RANCHI.longitude }) => {
+  const safeLat = Number.isFinite(Number(lat)) ? Number(lat) : RANCHI.latitude;
+  const safeLon = Number.isFinite(Number(lon)) ? Number(lon) : RANCHI.longitude;
+  const delta = 0.006;
+  const bbox = `${safeLon - delta},${safeLat - delta},${safeLon + delta},${safeLat + delta}`;
+  const src = `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${safeLat},${safeLon}`;
+  return <div className="map real-map"><iframe title="Issue location" src={src} loading="lazy" /></div>;
+};
+
+const Stepper = ({ active }) => (
+  <div className="stepper">{['Details', 'Evidence', 'AI Review', 'Submit'].map((label, index) => (
+    <React.Fragment key={label}><div className={`step ${index < active ? 'done ' : ''}${index === active ? 'current' : ''}`}><span>{index < active ? '✓' : index + 1}</span>{label}</div>{index < 3 && <div className="step-line" />}</React.Fragment>
+  ))}</div>
+);
+
+function Home({ nav }) {
+  const [stats, setStats] = useState({ submitted: 0, resolved: 0, nearby: [] });
+  useEffect(() => {
+    fetch(`${API_BASE}/api/complaints`)
+      .then((response) => response.json())
+      .then((items) => {
+        const list = Array.isArray(items) ? items : [];
+        setStats({ submitted: list.length, resolved: list.filter((item) => item.status === 'Resolved').length, nearby: list.slice(0, 3) });
+      })
+      .catch(() => {});
+  }, []);
+
+  return <div className="page"><Header /><main>
+    <section className="welcome"><p className="eyebrow">GOOD MORNING</p><h1>Help make your city <em>better.</em></h1><p className="muted">Spot a civic issue? Report it in seconds and let AI route it to the right team.</p><Button onClick={() => nav('report')} icon>Report an Issue</Button></section>
+    <section className="impact"><div><b>{stats.submitted}</b><span>Reports submitted</span></div><div><b>{stats.resolved}</b><span>Issues resolved</span></div><div><b>{stats.nearby.length}</b><span>Recent reports</span></div></section>
+    <section className="section-head"><h2>Recent civic issues</h2><button onClick={() => nav('reports')}>View all</button></section>
+    <div className="issue-list">{stats.nearby.length ? stats.nearby.map((issue) => <Issue key={issue.id} title={issue.description || 'Civic issue'} dept={issue.assigned_department || 'Unassigned'} severity={issue.ai_severity || 'Low'} />) : <div className="detail-card"><p className="muted">No reports yet. Your first report will appear here.</p></div>}</div>
+    <section className="ai-banner"><div className="ai-icon"><Icon name="spark" /></div><div><b>From report to resolution</b><p>Report → AI understands → Department assigned → Track</p></div></section>
+  </main></div>;
+}
+
+const Issue = ({ title, dept, severity }) => <div className="issue-card"><div className="issue-icon"><Icon name="pin" size={18} /></div><div className="issue-copy"><b>{title}</b><span>{dept}</span></div><Status>{severity}</Status></div>;
+
+function Report({ canContinue, complaint, setComplaint, photo, onPhoto, recording, seconds, start, stop, voiceUrl, locationState, getLocation, next, setWrittenDescription }) {
+  return <div className="page"><Header title="Report an Issue" back={() => window.history.back()} /><main><Stepper active={0} /><div className="screen-title"><p className="eyebrow">STEP 1 OF 4</p><h1>What happened?</h1><p className="muted">Tell us what you noticed. Add evidence to help us act faster.</p></div><label className="field-label">Description</label><textarea value={complaint.description} onChange={(event) => { setWrittenDescription(event.target.value); setComplaint((current) => ({ ...current, description: event.target.value })); }} className="textarea" placeholder="Describe the issue..." />
+    <div className="evidence-actions"><label className="evidence-btn"><input type="file" accept="image/*" capture="environment" onChange={onPhoto} /><span><Icon name="camera" />Add Photo</span></label><button className={`evidence-btn ${recording ? 'recording' : ''}`} onClick={recording ? stop : start}><Icon name="mic" /><span>{recording ? `Recording 0${seconds}s` : 'Record Voice'}</span></button></div>
+    {photo && <img className="photo-preview small" src={photo} alt="Selected civic evidence" />}{voiceUrl && <div className="voice-chip"><span className="pulse-dot" /><span>Voice note</span><b>00:{String(seconds).padStart(2, '0')}</b></div>}{voiceUrl && voiceUrl !== 'demo' && <audio className="voice-player inline" controls preload="metadata" src={voiceUrl}>Your browser does not support audio playback.</audio>}
+    <div className="section-head location-head"><h2>Issue location</h2><button onClick={getLocation}><Icon name="refresh" size={16} /> Refresh</button></div><div className="location-card"><div className="loc-row"><div className="loc-icon"><Icon name="pin" /></div><div><b>{locationState === 'loading' ? 'Detecting location…' : locationState === 'demo' ? 'Demo location' : 'Location captured'}</b><span>{Number(complaint.latitude).toFixed(4)}, {Number(complaint.longitude).toFixed(4)}</span></div><span className="loc-ok">✓</span></div><MapCard lat={complaint.latitude} lon={complaint.longitude} /></div><Button onClick={next} disabled={!canContinue} icon>Continue</Button><p className="privacy"><Icon name="info" size={15} /> Location is used to identify the reported issue and support routing.</p>
+  </main></div>;
+}
+
+function Evidence({ complaint, photo, voiceUrl, seconds, recording, start, stop, analyze }) {
+  return <div className="page"><Header title="Add Evidence" back={() => window.history.back()} /><main><Stepper active={1} /><div className="screen-title"><p className="eyebrow">STEP 2 OF 4</p><h1>Strengthen your report</h1><p className="muted">Evidence helps CivicPulse AI understand the issue with greater context.</p></div><div className="evidence-card"><div className="card-top"><b>Photo evidence</b><span className={`tag ${photo ? 'success' : ''}`}>{photo ? 'Added' : 'Optional'}</span></div>{photo ? <img className="photo-preview" src={photo} alt="Civic evidence" /> : <div className="photo-placeholder"><Icon name="camera" size={32} /><b>No photo added</b><span>You can continue with text or voice.</span></div>}</div><div className="evidence-card"><div className="card-top"><b>Voice note</b><span className="tag">{voiceUrl ? `00:${String(seconds).padStart(2, '0')}` : 'Optional'}</span></div><div className="voice-row"><button className="play-btn" onClick={recording ? stop : start}><Icon name={recording ? 'check' : 'mic'} size={18} /></button><div className="wave">{Array.from({ length: 28 }, (_, index) => <i key={index} style={{ height: `${10 + (index * 17) % 22}px` }} />)}</div><span>00:{String(seconds).padStart(2, '0')}</span></div>{voiceUrl && voiceUrl !== 'demo' && <audio className="voice-player" controls preload="metadata" src={voiceUrl}>Your browser does not support audio playback.</audio>}<small>Voice is transcribed and kept separate from the written description.</small></div><MapCard lat={complaint.latitude} lon={complaint.longitude} /><Button onClick={analyze} icon>Analyze with AI</Button></main></div>;
+}
+
+function Analysis({ progress, error, retry }) {
+  const steps = ['Reading complaint', 'Converting voice to text', 'Analyzing image', 'Identifying category', 'Assessing severity', 'Finding responsible department'];
+  if (error) return <div className="center-page"><div className="ai-ring"><Icon name="info" size={32} /></div><div className="eyebrow">CIVICPULSE AI</div><h1>Analysis needs attention</h1><p className="muted">{error}</p><Button onClick={retry}>Try analysis again</Button></div>;
+  return <div className="center-page"><div className="ai-loader"><div className="ai-ring"><Icon name="spark" size={34} /></div><div className="eyebrow">CIVICPULSE AI</div><h1>Understanding your report</h1><p>Running the actual local AI pipeline.</p></div><div className="analysis-list">{steps.map((step, index) => <div className={`analysis-step ${index < progress ? 'done' : index === progress ? 'active' : ''}`} key={step}><span>{index < progress ? '✓' : index === progress ? <span className="mini-spinner" /> : index + 1}</span>{step}{index < progress && <b>Done</b>}</div>)}</div><div className="progress-track"><div style={{ width: `${Math.min(progress / 6, 1) * 100}%` }} /></div><p className="muted center">AI analysis runs locally in this demo.</p></div>;
+}
+
+function Result({ complaint, writtenDescription, voiceTranscript, review }) {
+  const severity = complaint.ai_severity || 'Low';
+  const category = complaint.ai_category || 'General Maintenance';
+  const department = complaint.assigned_department || 'Unassigned';
+  const confidence = complaint.ai_confidence_score;
+  const title = severity === 'Critical' ? 'Critical civic issue' : severity === 'High' ? 'High-priority civic issue' : severity === 'Medium' ? 'Medium-priority civic issue' : 'Civic issue identified';
+  return <div className="page"><Header title="AI Results" back={() => window.history.back()} /><main><div className="result-hero"><div className="check-ring"><Icon name="spark" size={25} /></div><p className="eyebrow">ANALYSIS COMPLETE</p><h1>{title}</h1><p>AI classified the submitted context and selected a municipal department.</p></div><div className="insight-card"><div className="insight-top"><span className="ai-icon mini"><Icon name="spark" size={17} /></span><div><b>CivicPulse AI decision</b><span>Voice · image · text context</span></div>{typeof confidence === 'number' && <span className="confidence">{Math.round(confidence * 100)}%</span>}</div><div className="result-grid"><Info label="Category" value={category} /><Info label="Severity" value={<Status>{severity}</Status>} /><Info label="Department" value={department} /><Info label="Status" value={<Status>{complaint.status || 'Pending'}</Status>} /></div></div><div className="detail-card"><div className="section-head"><h2>Written description</h2></div><p>{writtenDescription || 'No written description provided.'}</p></div>{voiceTranscript && <div className="detail-card"><div className="section-head"><h2>Voice transcription</h2></div><p>{voiceTranscript}</p></div>}<div className="detail-card"><Info label="Location" value={`${Number(complaint.latitude).toFixed(4)}, ${Number(complaint.longitude).toFixed(4)}`} /></div><div className="explain"><Icon name="spark" size={18} /><span>The AI result is generated from the submitted report context. Related nearby reports are evaluated separately for priority and duplicate signals.</span></div><Button onClick={review} icon>Review Report</Button></main></div>;
+}
+
+const Info = ({ label, value }) => <div className="info"><span>{label}</span><b>{value}</b></div>;
+
+function Review({ complaint, writtenDescription, voiceTranscript, photo, seconds, edit, submit }) {
+  return <div className="page"><Header title="Review & Submit" back={edit} /><main><Stepper active={2} /><div className="screen-title"><p className="eyebrow">STEP 3 OF 4</p><h1>Review your report</h1><p className="muted">Everything looks ready. You can edit any detail before submitting.</p></div><div className="review-card"><ReviewRow label="Written description" value={writtenDescription || 'No written description provided.'} />{voiceTranscript && <ReviewRow label="Voice transcription" value={voiceTranscript} />}<ReviewRow label="Category" value={complaint.ai_category || 'Not analyzed'} /><ReviewRow label="Severity" value={<Status>{complaint.ai_severity || 'Not analyzed'}</Status>} /><ReviewRow label="Location" value={`${Number(complaint.latitude).toFixed(4)}, ${Number(complaint.longitude).toFixed(4)}`} /><ReviewRow label="Department" value={complaint.assigned_department || 'Pending AI analysis'} /><ReviewRow label="Status" value={<Status>{complaint.status || 'Pending'}</Status>} /></div>{photo && <img className="photo-preview small" src={photo} alt="Civic evidence" />}{voiceTranscript && <div className="voice-chip"><span className="pulse-dot" /><span>Voice transcription available</span><b>00:{String(seconds).padStart(2, '0')}</b></div>}<button className="edit-link" onClick={edit}><Icon name="edit" size={16} /> Edit details</button><Button onClick={submit} disabled={!((writtenDescription || '').trim() || photo || voiceTranscript)} >Submit Report</Button><button className="draft" onClick={() => alert('Draft saving is not enabled in this prototype.')}>Save as Draft</button></main></div>;
+}
+
+const ReviewRow = ({ label, value }) => <div className="review-row"><span>{label}</span><b>{value}</b></div>;
+const Submitting = () => <div className="center-page"><div className="submit-loader"><span /><span /><span /></div><h1>Submitting your report…</h1><p>Creating a trackable civic ticket.</p></div>;
+
+function Success({ complaint, track, home }) {
+  return <div className="center-page success-page"><div className="success-ring"><Icon name="check" size={38} /></div><p className="eyebrow">REPORT SUBMITTED</p><h1>Your civic issue is now on the radar.</h1><p>Your report has been sent to the responsible department. Track its status from My Reports.</p><div className="success-ticket"><span>Report ID</span><b>#{complaint.id?.slice(0, 8).toUpperCase() || 'CP-NEW'}</b><div><span>{complaint.assigned_department || 'Unassigned'}</span><Status>{complaint.status || 'Pending'}</Status></div><div><span>{complaint.ai_category || 'Category pending'}</span><Status>{complaint.ai_severity || 'Low'}</Status></div></div><Button onClick={track} icon>Track My Report</Button><button className="text-btn" onClick={home}>Back to Home</button></div>;
+}
+
+function Tracking({ complaint, setComplaint, setModal }) {
+  const [syncing, setSyncing] = useState(true);
+  const [syncError, setSyncError] = useState('');
+  const [statusNotice, setStatusNotice] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    const loadLatest = async () => {
+      if (!complaint?.id) return;
+      const previous = complaint.status || 'Pending';
+      try {
+        const response = await fetch(`${API_BASE}/api/complaints/${complaint.id}`);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`);
+        if (!cancelled) {
+          if (previous !== data.status) {
+            setStatusNotice(`Status updated: ${previous} → ${data.status}`);
+            setTimeout(() => setStatusNotice(''), 3500);
+          }
+          setComplaint((current) => ({ ...current, ...data }));
+          setSyncError('');
+        }
+      } catch (error) {
+        if (!cancelled) setSyncError('Live status unavailable');
+      } finally {
+        if (!cancelled) setSyncing(false);
+      }
+    };
+    loadLatest();
+    const interval = setInterval(loadLatest, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [complaint?.id, setComplaint]);
+
+  const status = complaint.status || 'Pending';
+  const stages = ['Report Submitted', 'AI Analysis Completed', 'Department Assigned', 'Pending', 'Acknowledged', 'In Progress', 'Resolved'];
+  const stageIndex = Math.max(0, stages.indexOf(status));
+  const prediction = status === 'Resolved' ? 'Resolved' : (complaint.estimated_resolution_hours ? `${complaint.estimated_resolution_hours} hours` : severityWindow(complaint.ai_severity));
+  const verificationKey = complaint?.id ? `civicpulse.verified.${complaint.id}` : null;
+  const alreadyVerified = verificationKey ? localStorage.getItem(verificationKey) === '1' : false;
+
+  const verify = async () => {
+    if (!complaint?.id || alreadyVerified) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/complaints/${complaint.id}/verify`, { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'Could not confirm this issue');
+      setComplaint((current) => ({ ...current, verification_count: data.verification_count, last_verified_at: data.last_verified_at, updated_at: data.last_verified_at }));
+      localStorage.setItem(verificationKey, '1');
+      setStatusNotice('Your confirmation was recorded.');
+      setTimeout(() => setStatusNotice(''), 3000);
+    } catch (error) {
+      setStatusNotice(error.message || 'Could not confirm this issue');
+    }
+  };
+
+  return <div className="page"><Header title="Track Report" back={() => window.history.back()} /><main>{statusNotice && <div className="detail-card"><b>{statusNotice}</b></div>}<div className="track-head"><div><p className="eyebrow">#{complaint.id?.slice(0, 8).toUpperCase() || 'CP-NEW'}</p><h1>{complaint.description || 'Civic issue report'}</h1><span className="muted">{complaint.ai_category || 'Unclassified'} · {complaint.ai_severity || 'Low'} priority</span></div><Status>{status}</Status></div><div className="detail-card compact"><Info label="Location" value={`${complaint.latitude?.toFixed(4) ?? '—'}, ${complaint.longitude?.toFixed(4) ?? '—'}`} /><Info label="Assigned department" value={complaint.assigned_department || 'Unassigned'} />{complaint.resolved_at && <Info label="Resolved at" value={formatLocalTime(complaint.resolved_at)} />}</div><div className="timeline">{stages.map((stage, index) => <div className={`timeline-item ${index < stageIndex ? 'done ' : ''}${index === stageIndex ? 'current' : ''}`} key={stage}><div className="timeline-dot">{index < stageIndex ? '✓' : index === stageIndex ? '•' : ''}</div><div><b>{stage}</b>{index === stageIndex && <span>{status === 'Resolved' ? 'Issue resolved' : `Current status · ${status}`}</span>}</div></div>)}</div><div className="estimate"><span className="ai-icon mini"><Icon name="spark" size={16} /></span><div><b>Projected service window</b><p>{prediction === 'Resolved' ? 'This complaint has been resolved.' : `Prototype service estimate: ${prediction}.`}</p>{complaint.probable_root_cause && <small>Contributing factor: {complaint.probable_root_cause}</small>}</div></div><div className="community"><div className="avatars"><span>AI</span><span>GPS</span><span>✓</span></div><div><b>Community verification</b><p>{complaint.verification_count || 0} confirmations</p></div><button onClick={verify} disabled={alreadyVerified}>{alreadyVerified ? 'Confirmed' : 'Confirm'}</button></div><p className="muted center">{syncing ? 'Syncing latest status…' : syncError || 'Status synced with CivicPulse Ops'}</p></main></div>;
+}
+
+const severityWindow = (severity) => ({ Critical: '24 hours', High: '48 hours', Medium: '3–5 days', Low: '5–7 days' }[severity] || 'not available');
+
+const formatLocalTime = (value) => { const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleString() : '—'; };
+
+function MyReports({ openTracking }) {
+  const [items, setItems] = useState([]);
+  const [filter, setFilter] = useState('All');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const load = async () => {
+    setLoading(true); setError('');
+    try {
+      const ids = readStoredReportIds();
+      if (!ids.length) { setItems([]); return; }
+      const results = await Promise.all(ids.map(async (id) => { try { const response = await fetch(`${API_BASE}/api/complaints/${id}`); return response.ok ? response.json() : null; } catch { return null; } }));
+      setItems(results.filter(Boolean));
+    } catch (error) { setError(error.message || 'Could not load your reports.'); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+  const filtered = filter === 'All' ? items : items.filter((item) => filter === 'Resolved' ? item.status === 'Resolved' : item.status !== 'Resolved');
+  const pendingCount = items.filter((item) => item.status !== 'Resolved').length;
+  const resolvedCount = items.filter((item) => item.status === 'Resolved').length;
+  return <div className="page"><Header title="My Reports" /><main><div className="screen-title"><p className="eyebrow">YOUR ACTIVITY</p><h1>Reports</h1><p className="muted">Keep track of every issue you’ve raised.</p></div><div className="filter-row"><button className={filter === 'All' ? 'selected' : ''} onClick={() => setFilter('All')}>All <span>{items.length}</span></button><button className={filter === 'Pending' ? 'selected' : ''} onClick={() => setFilter('Pending')}>Pending <span>{pendingCount}</span></button><button className={filter === 'Resolved' ? 'selected' : ''} onClick={() => setFilter('Resolved')}>Resolved <span>{resolvedCount}</span></button></div>{loading ? <div className="detail-card"><p className="muted">Loading your reports…</p></div> : error ? <div className="detail-card"><p>{error}</p><button className="text-btn" onClick={load}>Try again</button></div> : filtered.length === 0 ? <div className="detail-card"><h2>No reports yet</h2><p className="muted">Submit a civic issue and it will appear here automatically.</p></div> : <div className="reports-list">{filtered.map((report) => <button className="report-card" key={report.id} onClick={() => openTracking(report)}><div className="report-card-top"><span className="report-number">#{report.id.slice(0, 8).toUpperCase()}</span><Status>{report.status || 'Pending'}</Status></div><h3>{report.description || report.voice_transcript || 'Civic issue report'}</h3><p>{report.ai_category || 'Unclassified'} · {report.assigned_department || 'Unassigned'}</p><div className="report-card-foot"><span>{typeof report.latitude === 'number' ? report.latitude.toFixed(4) : '—'}, {typeof report.longitude === 'number' ? report.longitude.toFixed(4) : '—'}</span><Icon name="arrow" size={16} /></div></button>)}</div>}<button className="text-btn" onClick={load}>Refresh reports</button></main></div>;
+}
+
+function Profile({ lang, setLang, showToast }) { return <div className="page"><Header title="Profile" /><main><div className="profile-head"><div className="avatar">DC</div><div><h1>Demo Citizen</h1><p className="muted">CivicPulse member</p></div></div><Setting title="Notifications" icon="bell"><Toggle on={true} onChange={() => showToast('Notifications are enabled for this demo')} /></Setting><Setting title="Location permission" icon="pin"><span className="setting-value">Browser controlled</span></Setting><Setting title="Language" icon="globe"><div className="lang-toggle"><button className={lang === 'English' ? 'selected' : ''} onClick={() => setLang('English')}>English</button><button className={lang === 'Hindi' ? 'selected' : ''} onClick={() => setLang('Hindi')}>हिन्दी</button></div></Setting><div className="setting-section"><h3>Accessibility</h3><Setting title="Large text" icon="info"><Toggle /></Setting><Setting title="High contrast" icon="spark"><Toggle /></Setting><Setting title="Voice-first reporting" icon="mic"><Toggle on /></Setting></div><div className="setting-section"><h3>Privacy</h3><p className="muted small-text">Data access and processing follow applicable consent, privacy and data-governance requirements.</p></div></main></div>; }
+const Setting = ({ title, icon, children }) => <div className="setting"><div className="setting-left"><span className="setting-icon"><Icon name={icon} size={17} /></span><b>{title}</b></div>{children}</div>;
+const Toggle = ({ on = false, onChange }) => <button className={`toggle ${on ? 'on' : ''}`} onClick={onChange}><span /></button>;
+function Modal({ close }) { return <div className="modal-backdrop" onClick={close}><div className="modal" onClick={(event) => event.stopPropagation()}><div className="modal-grab" /><div className="modal-head"><div><p className="eyebrow">NEARBY INTELLIGENCE</p><h2>Related reports</h2></div><button className="icon-btn" onClick={close}>×</button></div><div className="nearby-item"><div className="mini-map"><Icon name="pin" /></div><div><b>Related report cluster</b><p>Used for hotspot and duplicate analysis</p></div></div><div className="nearby-item"><div className="mini-map"><Icon name="spark" /></div><div><b>Operational priority</b><p>Severity + nearby report density</p></div></div><Button onClick={close}>Done</Button></div></div>; }
 export default App;

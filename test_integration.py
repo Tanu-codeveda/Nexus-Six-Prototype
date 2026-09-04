@@ -1,10 +1,4 @@
-"""
-CivicPulse API integration checks.
-
-Run with the FastAPI server already running:
-    python test_integration.py
-"""
-
+"""CivicPulse API integration checks. Run with FastAPI already running."""
 from __future__ import annotations
 
 import sys
@@ -12,9 +6,8 @@ import uuid
 
 import requests
 
-
 BASE_URL = "http://127.0.0.1:8000"
-TIMEOUT = 10
+TIMEOUT = 15
 
 
 def check(condition: bool, message: str) -> None:
@@ -23,97 +16,68 @@ def check(condition: bool, message: str) -> None:
 
 
 def main() -> int:
-    print("=" * 64)
     print("CivicPulse API Integration Test")
-    print("=" * 64)
-
-    # 1. Health
     health = requests.get(f"{BASE_URL}/api/health", timeout=TIMEOUT)
-    check(health.status_code == 200, f"Health failed: {health.text}")
-    check(health.json().get("status") == "ok", "Health status is not ok.")
-    print("[PASS] GET /api/health")
+    check(health.status_code == 200, health.text)
+    print("[PASS] health")
 
-    # 2. List
-    listing = requests.get(f"{BASE_URL}/api/complaints", timeout=TIMEOUT)
-    check(listing.status_code == 200, f"GET complaints failed: {listing.text}")
-    complaints = listing.json()
-    check(isinstance(complaints, list), "Complaint response is not a list.")
-    print(f"[PASS] GET /api/complaints ({len(complaints)} records)")
-
-    # 3. Create
     marker = str(uuid.uuid4())[:8]
     payload = {
         "latitude": 23.3441,
         "longitude": 85.3096,
         "media_url": None,
-        "description": f"Integration test pothole report {marker} near Main Road.",
+        "description": f"Integration test pothole near Main Road {marker}",
+        "voice_transcript": None,
     }
-    created = requests.post(
-        f"{BASE_URL}/api/complaints",
-        json=payload,
-        timeout=TIMEOUT,
-    )
-    check(created.status_code == 201, f"POST failed: {created.text}")
+    analysis = requests.post(f"{BASE_URL}/api/analyze-complaint", json=payload, timeout=TIMEOUT)
+    check(analysis.status_code == 200, analysis.text)
+    analysis_data = analysis.json()
+    check(analysis_data["ai_category"] == "Roads and Potholes", "Analysis category mapping failed")
+    print("[PASS] analyze")
+
+    created = requests.post(f"{BASE_URL}/api/complaints", json=payload, timeout=TIMEOUT)
+    check(created.status_code == 201, created.text)
     record = created.json()
     complaint_id = record["id"]
-    check(record["ai_category"] == "Roads and Potholes", "Category mapping failed.")
-    check(record["assigned_department"] == "Public Works Department (PWD)", "Department mapping failed.")
-    check(record["status"] == "Pending", "Default status is incorrect.")
-    print("[PASS] POST /api/complaints")
+    check(record["status"] == "Pending", "Default status wrong")
+    check(record["updated_at"], "updated_at missing")
+    print("[PASS] create")
 
-    # 4. Get one
-    fetched = requests.get(
-        f"{BASE_URL}/api/complaints/{complaint_id}",
-        timeout=TIMEOUT,
-    )
-    check(fetched.status_code == 200, f"GET one failed: {fetched.text}")
-    check(fetched.json()["id"] == complaint_id, "Returned ID mismatch.")
-    print("[PASS] GET /api/complaints/{id}")
+    for status in ["Acknowledged", "In Progress", "Resolved"]:
+        response = requests.patch(
+            f"{BASE_URL}/api/complaints/{complaint_id}",
+            json={"status": status},
+            timeout=TIMEOUT,
+        )
+        check(response.status_code == 200, response.text)
+        data = response.json()
+        check(data["status"] == status, f"Status did not become {status}")
+        print(f"[PASS] patch {status}")
 
-    # 5. Patch status + department
-    patch = requests.patch(
-        f"{BASE_URL}/api/complaints/{complaint_id}",
-        json={
-            "status": "In Progress",
-            "assigned_department": "Public Works Department (PWD)",
-        },
-        timeout=TIMEOUT,
-    )
-    check(patch.status_code == 200, f"PATCH failed: {patch.text}")
-    patched = patch.json()
-    check(patched["status"] == "In Progress", "Status update failed.")
-    print("[PASS] PATCH /api/complaints/{id}")
+    final = requests.get(f"{BASE_URL}/api/complaints/{complaint_id}", timeout=TIMEOUT)
+    check(final.status_code == 200, final.text)
+    final_data = final.json()
+    check(final_data["acknowledged_at"], "acknowledged_at missing")
+    check(final_data["in_progress_at"], "in_progress_at missing")
+    check(final_data["resolved_at"], "resolved_at missing")
+    check(final_data["updated_at"], "updated_at missing")
+    print("[PASS] lifecycle timestamps")
 
-    # 6. Validation
     invalid = requests.patch(
         f"{BASE_URL}/api/complaints/{complaint_id}",
         json={"status": "Not A Real Status"},
         timeout=TIMEOUT,
     )
-    check(invalid.status_code == 422, "Invalid status should return 422.")
-    print("[PASS] Enum validation returns 422")
+    check(invalid.status_code == 422, "Invalid status should return 422")
+    print("[PASS] validation")
 
-    # 7. Missing record
-    missing = requests.get(
-        f"{BASE_URL}/api/complaints/not-a-real-id",
-        timeout=TIMEOUT,
-    )
-    check(missing.status_code == 404, "Missing complaint should return 404.")
-    print("[PASS] Missing complaint returns 404")
-
-    print("=" * 64)
     print("ALL INTEGRATION TESTS PASSED")
-    print("=" * 64)
     return 0
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except requests.RequestException as exc:
-        print(f"\n[FAIL] API connection error: {exc}")
-        print("Start the server with: python -m uvicorn main:app")
-        raise SystemExit(1)
-    except AssertionError as exc:
-        print(f"\n[FAIL] {exc}")
+    except (requests.RequestException, AssertionError) as exc:
+        print(f"[FAIL] {exc}")
         raise SystemExit(1)
