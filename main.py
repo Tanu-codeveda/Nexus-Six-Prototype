@@ -710,5 +710,36 @@ def update_complaint(
         raise HTTPException(500, f"Could not update complaint: {exc}") from exc
 
 
+import hashlib
+
+@app.post("/api/register", response_model=schemas.UserResponse, status_code=201)
+def register_user(payload: schemas.UserCreate, db: Session = Depends(get_db)):
+    existing = db.query(models.User).filter(models.User.email == payload.email).first()
+    if existing:
+        raise HTTPException(400, "Email already registered")
+    
+    hashed_password = hashlib.sha256(payload.password.encode()).hexdigest()
+    user = models.User(
+        name=payload.name,
+        email=payload.email,
+        hashed_password=hashed_password,
+        created_at=datetime.utcnow()
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+@app.post("/api/login", response_model=schemas.UserResponse)
+def login_user(payload: schemas.UserLogin, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == payload.email).first()
+    if not user:
+        raise HTTPException(401, "Invalid email or password")
+    
+    hashed_password = hashlib.sha256(payload.password.encode()).hexdigest()
+    if user.hashed_password != hashed_password:
+        raise HTTPException(401, "Invalid email or password")
+    return user
+
 # API routes are registered before the static root so /api/* remains reachable.
 app.mount("/", StaticFiles(directory=str(BASE_DIR), html=True), name="static")

@@ -72,7 +72,7 @@ const Icon = ({ name, size = 20 }) => {
 };
 
 function App() {
-  const [screen, setScreen] = useState('home');
+  const [screen, setScreen] = useState('login');
   const [complaint, setComplaint] = useState({ ...EMPTY_COMPLAINT });
   const [writtenDescription, setWrittenDescription] = useState('');
   const [voiceTranscript, setVoiceTranscript] = useState('');
@@ -87,10 +87,16 @@ function App() {
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState('');
   const [lang, setLang] = useState('English');
+  const [theme, setTheme] = useState(localStorage.getItem('civicpulse.theme') || 'light');
   const recorder = useRef(null);
   const timer = useRef(null);
   const recordingStartedAt = useRef(0);
   const toastTimer = useRef(null);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('civicpulse.theme', theme);
+  }, [theme]);
 
   const showToast = (message) => {
     setToast(message);
@@ -339,6 +345,8 @@ function App() {
   return (
     <div className="app-shell">
       <div className="app-frame">
+        {screen === 'login' && <Login nav={nav} />}
+        {screen === 'register' && <Register nav={nav} />}
         {screen === 'home' && <Home nav={nav} />}
         {screen === 'report' && (
           <Report
@@ -377,8 +385,8 @@ function App() {
         {screen === 'success' && <Success complaint={complaint} track={() => nav('tracking')} home={() => nav('home')} />}
         {screen === 'tracking' && <Tracking complaint={complaint} setComplaint={setComplaint} setModal={setModal} />}
         {screen === 'reports' && <MyReports openTracking={openTracking} />}
-        {screen === 'profile' && <Profile lang={lang} setLang={setLang} showToast={showToast} />}
-        {!['analysis', 'submitting'].includes(screen) && <BottomNav screen={screen} nav={nav} reset={resetReport} />}
+        {screen === 'profile' && <Profile lang={lang} setLang={setLang} showToast={showToast} nav={nav} theme={theme} setTheme={setTheme} />}
+        {!['login', 'register', 'analysis', 'submitting'].includes(screen) && <BottomNav screen={screen} nav={nav} reset={resetReport} />}
         {toast && <div className="toast">{toast}</div>}
         {modal === 'nearby' && <Modal close={() => setModal(null)} />}
       </div>
@@ -619,8 +627,231 @@ function MyReports({ openTracking }) {
   return <div className="page"><Header title="My Reports" /><main><div className="screen-title"><p className="eyebrow">YOUR ACTIVITY</p><h1>Reports</h1><p className="muted">Keep track of every issue you’ve raised.</p></div><div className="filter-row"><button className={filter === 'All' ? 'selected' : ''} onClick={() => setFilter('All')}>All <span>{items.length}</span></button><button className={filter === 'Pending' ? 'selected' : ''} onClick={() => setFilter('Pending')}>Pending <span>{pendingCount}</span></button><button className={filter === 'Resolved' ? 'selected' : ''} onClick={() => setFilter('Resolved')}>Resolved <span>{resolvedCount}</span></button></div>{loading ? <div className="detail-card"><p className="muted">Loading your reports…</p></div> : error ? <div className="detail-card"><p>{error}</p><button className="text-btn" onClick={load}>Try again</button></div> : filtered.length === 0 ? <div className="detail-card"><h2>No reports yet</h2><p className="muted">Submit a civic issue and it will appear here automatically.</p></div> : <div className="reports-list">{filtered.map((report) => <button className="report-card" key={report.id} onClick={() => openTracking(report)}><div className="report-card-top"><span className="report-number">#{report.id.slice(0, 8).toUpperCase()}</span><Status>{report.status || 'Pending'}</Status></div><h3>{report.description || report.voice_transcript || 'Civic issue report'}</h3><p>{report.ai_category || 'Unclassified'} · {report.assigned_department || 'Unassigned'}</p><div className="report-card-foot"><span>{typeof report.latitude === 'number' ? report.latitude.toFixed(4) : '—'}, {typeof report.longitude === 'number' ? report.longitude.toFixed(4) : '—'}</span><Icon name="arrow" size={16} /></div></button>)}</div>}<button className="text-btn" onClick={load}>Refresh reports</button></main></div>;
 }
 
-function Profile({ lang, setLang, showToast }) { return <div className="page"><Header title="Profile" /><main><div className="profile-head"><div className="avatar">DC</div><div><h1>Demo Citizen</h1><p className="muted">CivicPulse member</p></div></div><Setting title="Notifications" icon="bell"><Toggle on={true} onChange={() => showToast('Notifications are enabled for this demo')} /></Setting><Setting title="Location permission" icon="pin"><span className="setting-value">Browser controlled</span></Setting><Setting title="Language" icon="globe"><div className="lang-toggle"><button className={lang === 'English' ? 'selected' : ''} onClick={() => setLang('English')}>English</button><button className={lang === 'Hindi' ? 'selected' : ''} onClick={() => setLang('Hindi')}>हिन्दी</button></div></Setting><div className="setting-section"><h3>Accessibility</h3><Setting title="Large text" icon="info"><Toggle /></Setting><Setting title="High contrast" icon="spark"><Toggle /></Setting><Setting title="Voice-first reporting" icon="mic"><Toggle on /></Setting></div><div className="setting-section"><h3>Privacy</h3><p className="muted small-text">Data access and processing follow applicable consent, privacy and data-governance requirements.</p></div></main></div>; }
+function Profile({ lang, setLang, showToast, nav, theme, setTheme }) {
+  const [user, setUser] = useState(null);
+  
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('civicpulse.user');
+      if (stored) setUser(JSON.parse(stored));
+    } catch (e) {}
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('civicpulse.user');
+    nav('login');
+  };
+
+  const name = user?.name || 'Demo Citizen';
+  const email = user?.email || 'CivicPulse member';
+  const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'DC';
+
+  return (
+    <div className="page">
+      <Header title="Profile" />
+      <main>
+        <div className="profile-head">
+          <div className="avatar">{initials}</div>
+          <div>
+            <h1>{name}</h1>
+            <p className="muted">{email}</p>
+          </div>
+        </div>
+        
+        <div className="setting-section" style={{ marginTop: '0' }}>
+          <h3>Preferences</h3>
+          <Setting title="Theme" icon="sun">
+            <div className="lang-toggle">
+              <button className={theme === 'light' ? 'selected' : ''} onClick={() => setTheme('light')}>Light</button>
+              <button className={theme === 'dark' ? 'selected' : ''} onClick={() => setTheme('dark')}>Dark</button>
+            </div>
+          </Setting>
+          <Setting title="Language" icon="globe">
+            <div className="lang-toggle">
+              <button className={lang === 'English' ? 'selected' : ''} onClick={() => setLang('English')}>EN</button>
+              <button className={lang === 'Hindi' ? 'selected' : ''} onClick={() => setLang('Hindi')}>HI</button>
+            </div>
+          </Setting>
+          <Setting title="Notifications" icon="bell"><Toggle on={true} onChange={() => showToast('Notifications are enabled for this demo')} /></Setting>
+          <Setting title="Location permission" icon="pin"><span className="setting-value">Browser controlled</span></Setting>
+        </div>
+
+        <div className="setting-section">
+          <h3>Accessibility</h3>
+          <Setting title="Large text" icon="info"><Toggle /></Setting>
+          <Setting title="High contrast" icon="spark"><Toggle /></Setting>
+          <Setting title="Voice-first reporting" icon="mic"><Toggle on /></Setting>
+        </div>
+
+        <div className="setting-section">
+          <h3>Privacy</h3>
+          <p className="muted small-text">Data access and processing follow applicable consent, privacy and data-governance requirements.</p>
+        </div>
+
+        <div style={{ marginTop: '2rem', textAlign: 'center' }}>
+          <button className="text-btn" style={{ color: '#e53e3e' }} onClick={handleLogout}>Sign Out</button>
+        </div>
+      </main>
+    </div>
+  );
+}
 const Setting = ({ title, icon, children }) => <div className="setting"><div className="setting-left"><span className="setting-icon"><Icon name={icon} size={17} /></span><b>{title}</b></div>{children}</div>;
 const Toggle = ({ on = false, onChange }) => <button className={`toggle ${on ? 'on' : ''}`} onClick={onChange}><span /></button>;
 function Modal({ close }) { return <div className="modal-backdrop" onClick={close}><div className="modal" onClick={(event) => event.stopPropagation()}><div className="modal-grab" /><div className="modal-head"><div><p className="eyebrow">NEARBY INTELLIGENCE</p><h2>Related reports</h2></div><button className="icon-btn" onClick={close}>×</button></div><div className="nearby-item"><div className="mini-map"><Icon name="pin" /></div><div><b>Related report cluster</b><p>Used for hotspot and duplicate analysis</p></div></div><div className="nearby-item"><div className="mini-map"><Icon name="spark" /></div><div><b>Operational priority</b><p>Severity + nearby report density</p></div></div><Button onClick={close}>Done</Button></div></div>; }
+function Login({ nav }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || 'Login failed');
+      }
+      localStorage.setItem('civicpulse.user', JSON.stringify(data));
+      nav('home');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="page center-page">
+      <div className="brand-mark" style={{ marginBottom: '1rem', width: 48, height: 48, fontSize: 20 }}>CP</div>
+      <div className="brand" style={{ marginBottom: '2rem' }}>CivicPulse <span>AI</span></div>
+      
+      <form onSubmit={handleLogin} style={{ width: '100%', maxWidth: 320, textAlign: 'left' }}>
+        {error && <div style={{ color: 'red', marginBottom: '1rem', fontSize: '14px' }}>{error}</div>}
+        <div style={{ marginBottom: '1rem' }}>
+          <label className="field-label">Email</label>
+          <input 
+            type="email" 
+            className="textarea" 
+            style={{ minHeight: 'auto', padding: '12px' }} 
+            placeholder="citizen@example.com" 
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+          />
+        </div>
+        <div style={{ marginBottom: '1.5rem' }}>
+          <label className="field-label">Password</label>
+          <input 
+            type="password" 
+            className="textarea" 
+            style={{ minHeight: 'auto', padding: '12px' }} 
+            placeholder="••••••••" 
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+          />
+        </div>
+        <Button type="submit" disabled={!email || !password || loading}>
+          {loading ? 'Signing In...' : 'Sign In'}
+        </Button>
+      </form>
+      
+      <p style={{ marginTop: '2rem' }} className="muted">
+        Don't have an account? <button type="button" className="text-btn" onClick={() => nav('register')} style={{ display: 'inline', padding: 0 }}>Register</button>
+      </p>
+    </div>
+  );
+}
+
+function Register({ nav }) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || 'Registration failed');
+      }
+      nav('login');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="page center-page">
+      <div className="brand-mark" style={{ marginBottom: '1rem', width: 48, height: 48, fontSize: 20 }}>CP</div>
+      <div className="brand" style={{ marginBottom: '2rem' }}>CivicPulse <span>AI</span></div>
+      
+      <form onSubmit={handleRegister} style={{ width: '100%', maxWidth: 320, textAlign: 'left' }}>
+        {error && <div style={{ color: 'red', marginBottom: '1rem', fontSize: '14px' }}>{error}</div>}
+        <div style={{ marginBottom: '1rem' }}>
+          <label className="field-label">Full Name</label>
+          <input 
+            type="text" 
+            className="textarea" 
+            style={{ minHeight: 'auto', padding: '12px' }} 
+            placeholder="Demo Citizen" 
+            value={name}
+            onChange={e => setName(e.target.value)}
+            required
+          />
+        </div>
+        <div style={{ marginBottom: '1rem' }}>
+          <label className="field-label">Email</label>
+          <input 
+            type="email" 
+            className="textarea" 
+            style={{ minHeight: 'auto', padding: '12px' }} 
+            placeholder="citizen@example.com" 
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+          />
+        </div>
+        <div style={{ marginBottom: '1.5rem' }}>
+          <label className="field-label">Password</label>
+          <input 
+            type="password" 
+            className="textarea" 
+            style={{ minHeight: 'auto', padding: '12px' }} 
+            placeholder="••••••••" 
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+          />
+        </div>
+        <Button type="submit" disabled={!name || !email || !password || loading}>
+          {loading ? 'Creating Account...' : 'Create Account'}
+        </Button>
+      </form>
+      
+      <p style={{ marginTop: '2rem' }} className="muted">
+        Already have an account? <button type="button" className="text-btn" onClick={() => nav('login')} style={{ display: 'inline', padding: 0 }}>Sign In</button>
+      </p>
+    </div>
+  );
+}
+
 export default App;

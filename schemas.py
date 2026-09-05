@@ -120,3 +120,19 @@ class ComplaintAnalysisResponse(BaseModel):
     root_cause_confidence: Optional[float] = None
     recommended_action: Optional[str] = None
     prediction_basis: Optional[str] = None
+
+class UserCreate(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    name: str
+    email: str
+    created_at: datetime

@@ -34,3 +34,13 @@ class Complaint(Base):
 
     # JSON array stored as TEXT so the SQLite demo database remains simple.
     progress_updates = Column(Text, nullable=True, default="[]")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
