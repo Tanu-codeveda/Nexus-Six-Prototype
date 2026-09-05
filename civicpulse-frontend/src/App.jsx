@@ -88,6 +88,7 @@ function App() {
   const [toast, setToast] = useState('');
   const [lang, setLang] = useState('English');
   const [theme, setTheme] = useState(localStorage.getItem('civicpulse.theme') || 'light');
+  const [reportResetKey, setReportResetKey] = useState(0);
   const recorder = useRef(null);
   const timer = useRef(null);
   const recordingStartedAt = useRef(0);
@@ -333,6 +334,7 @@ function App() {
     setSeconds(0);
     setAiError('');
     setAiProgress(0);
+    setReportResetKey((key) => key + 1);
     setScreen('report');
   };
 
@@ -349,7 +351,7 @@ function App() {
         {screen === 'register' && <Register nav={nav} />}
         {screen === 'home' && <Home nav={nav} />}
         {screen === 'report' && (
-          <Report
+          <Report key={reportResetKey}
             canContinue={hasReportContent(writtenDescription, photo, voiceDataUrl)}
             complaint={complaint}
             setComplaint={setComplaint}
@@ -615,7 +617,21 @@ function MyReports({ openTracking }) {
     try {
       const ids = readStoredReportIds();
       if (!ids.length) { setItems([]); return; }
-      const results = await Promise.all(ids.map(async (id) => { try { const response = await fetch(`${API_BASE}/api/complaints/${id}`); return response.ok ? response.json() : null; } catch { return null; } }));
+      const staleIds = [];
+      const results = await Promise.all(ids.map(async (id) => {
+        try {
+          const response = await fetch(`${API_BASE}/api/complaints/${id}`);
+          if (response.ok) return response.json();
+          if (response.status === 404) staleIds.push(id);
+          return null;
+        } catch {
+          return null;
+        }
+      }));
+      if (staleIds.length) {
+        const remainingIds = readStoredReportIds().filter((id) => !staleIds.includes(id));
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(remainingIds)); } catch {}
+      }
       setItems(results.filter(Boolean));
     } catch (error) { setError(error.message || 'Could not load your reports.'); }
     finally { setLoading(false); }

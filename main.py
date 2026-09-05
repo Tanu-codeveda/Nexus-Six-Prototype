@@ -49,6 +49,9 @@ def ensure_schema_columns() -> None:
         "estimated_resolution_hours": "INTEGER",
         "probable_root_cause": "TEXT",
         "progress_updates": "TEXT",
+        "is_escalated": "INTEGER DEFAULT 0",
+        "delay_reason": "TEXT",
+        "close_confirmed_at": "DATETIME",
     }
     with engine.begin() as connection:
         for name, sql_type in additions.items():
@@ -81,6 +84,32 @@ except Exception:
 
 
 SEVERITY_BASE = {"Critical": 90, "High": 72, "Medium": 50, "Low": 28}
+TEXT_CRITICAL_TERMS = (
+    "emergency", "life threatening", "life-threatening", "electrocution",
+    "fire", "collapsed", "collapse", "severe flooding", "major accident",
+)
+TEXT_HIGH_TERMS = (
+    "dangerous", "critical", "severe", "major", "large pothole",
+    "deep pothole", "risk to life", "blocking road", "completely blocked",
+    "overflowing", "not working", "no water for days", "power outage",
+)
+TEXT_MEDIUM_TERMS = (
+    "moderate", "repeated", "frequent", "leaking", "damaged", "broken",
+    "accumulating", "persistent",
+)
+TEXT_LOW_TERMS = ("minor", "small", "slight", "cosmetic")
+
+def infer_text_severity(text_value: str | None) -> str | None:
+    text = (text_value or "").lower()
+    if any(term in text for term in TEXT_CRITICAL_TERMS):
+        return "Critical"
+    if any(term in text for term in TEXT_HIGH_TERMS):
+        return "High"
+    if any(term in text for term in TEXT_MEDIUM_TERMS):
+        return "Medium"
+    if any(term in text for term in TEXT_LOW_TERMS):
+        return "Low"
+    return None
 CATEGORY_BASE_HOURS = {
     "Traffic Issues": 44,
     "Electricity and Power": 52,
@@ -165,8 +194,13 @@ def calculate_priority(complaint: models.Complaint, all_complaints: list[models.
     nearby_open = [other for other in nearby if other.status != schemas.ComplaintStatus.RESOLVED.value]
     duplicates = find_duplicate_candidates(complaint, all_complaints)
 
-    score = SEVERITY_BASE.get(complaint.ai_severity, 28)
-    reasons: list[str] = [f"{complaint.ai_severity or 'Low'} severity"]
+    inferred_severity = infer_text_severity(_combine_text(complaint.description, complaint.voice_transcript))
+    effective_severity = max(
+        (complaint.ai_severity or "Low", inferred_severity or "Low"),
+        key=_severity_rank,
+    )
+    score = SEVERITY_BASE.get(effective_severity, 28)
+    reasons: list[str] = [f"{effective_severity} severity"]
     if nearby_open:
         score += min(15, len(nearby_open) * 3)
         reasons.append(f"{len(nearby_open)} nearby active reports")
@@ -352,6 +386,9 @@ def build_complaint_view(complaint: models.Complaint, all_complaints: list[model
         "duplicate_count": len(duplicate_ids),
         "possible_duplicate_ids": duplicate_ids,
         "progress_updates": updates,
+        "is_escalated": getattr(complaint, 'is_escalated', False),
+        "delay_reason": getattr(complaint, 'delay_reason', None),
+        "close_confirmed_at": getattr(complaint, 'close_confirmed_at', None),
     }
 
 
@@ -424,8 +461,9 @@ def analyze_complaint_inputs(
         ai_category, assigned_department = map_category_and_department(detected_issue, combined_text)
         nlp_severity = "Low"
 
+    text_severity = infer_text_severity(combined_text)
     ai_severity = max(
-        (vision_severity or "Low", nlp_severity or "Low"),
+        (vision_severity or "Low", nlp_severity or "Low", text_severity or "Low"),
         key=_severity_rank,
     )
     ai_confidence = max(vision_confidence, nlp_confidence, nlp_severity_confidence)
@@ -687,6 +725,12 @@ def update_complaint(
             append_progress(complaint, update_data.progress_message, kind="admin")
             changed = True
 
+        if update_data.delay_reason is not None:
+            if complaint.delay_reason != update_data.delay_reason:
+                complaint.delay_reason = update_data.delay_reason
+                changed = True
+                append_progress(complaint, f"Delay update: {update_data.delay_reason}", kind="admin")
+
         if changed:
             complaint.updated_at = now
 
@@ -740,6 +784,51 @@ def login_user(payload: schemas.UserLogin, db: Session = Depends(get_db)):
     if user.hashed_password != hashed_password:
         raise HTTPException(401, "Invalid email or password")
     return user
+
+@app.post("/api/complaints/escalate-overdue", response_model=list[schemas.ComplaintResponse])
+def escalate_overdue(db: Session = Depends(get_db)):
+    """Evaluate all pending and in-progress tickets for escalation based on estimated_resolution_hours."""
+    complaints = db.query(models.Complaint).filter(
+        models.Complaint.status.in_([schemas.ComplaintStatus.PENDING.value, schemas.ComplaintStatus.ACKNOWLEDGED.value, schemas.ComplaintStatus.IN_PROGRESS.value])
+    ).all()
+    
+    escalated = []
+    now = datetime.utcnow()
+    for complaint in complaints:
+        if complaint.is_escalated:
+            continue
+        if complaint.estimated_resolution_hours:
+            deadline = complaint.created_at + timedelta(hours=complaint.estimated_resolution_hours)
+            if now > deadline:
+                complaint.is_escalated = True
+                append_progress(complaint, "SLA deadline exceeded. Escalated to High Authority.", kind="admin")
+                escalated.append(complaint)
+    
+    if escalated:
+        db.commit()
+    
+    all_complaints = db.query(models.Complaint).all()
+    return [build_complaint_view(c, all_complaints) for c in escalated]
+
+@app.post("/api/complaints/{complaint_id}/confirm-close", response_model=schemas.ComplaintResponse)
+def confirm_close(complaint_id: str, db: Session = Depends(get_db)):
+    """Confirm a resolved issue."""
+    complaints = db.query(models.Complaint).all()
+    complaint = next((item for item in complaints if item.id == complaint_id), None)
+    if not complaint:
+        raise HTTPException(404, "Complaint not found")
+    
+    if complaint.status != schemas.ComplaintStatus.RESOLVED.value:
+        raise HTTPException(400, "Can only confirm closed tickets")
+        
+    if not complaint.close_confirmed_at:
+        complaint.close_confirmed_at = datetime.utcnow()
+        complaint.updated_at = complaint.close_confirmed_at
+        append_progress(complaint, "Resolution confirmed by citizen.", kind="community")
+        db.commit()
+        db.refresh(complaint)
+        
+    return build_complaint_view(complaint, db.query(models.Complaint).all())
 
 # API routes are registered before the static root so /api/* remains reachable.
 app.mount("/", StaticFiles(directory=str(BASE_DIR), html=True), name="static")

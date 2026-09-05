@@ -82,6 +82,22 @@ TEMPLATES = {
     ],
 }
 
+SEVERITY_MODIFIERS = {
+    "Critical": "Emergency: immediate danger is reported and urgent municipal response is required.",
+    "High": "This is dangerous and could cause harm if left unattended.",
+    "Medium": "The issue is persistent and needs attention soon.",
+    "Low": "Minor issue observed; there is no immediate danger.",
+}
+
+# Deliberately balanced for a convincing dashboard demo: roughly 4% critical,
+# 20% high, 44% medium and 32% low when --count 50 is used.
+SEVERITY_SEQUENCE = [
+    "Critical", "Critical",
+    *(["High"] * 10),
+    *(["Medium"] * 22),
+    *(["Low"] * 16),
+]
+
 CATEGORY_WEIGHTS = {
     "Roads and Potholes": 22,
     "Water Supply": 14,
@@ -97,10 +113,10 @@ FALLBACK_LAT, FALLBACK_LON = RANCHI_CENTER
 fake = Faker("en_IN")
 
 
-def build_payload(category: str) -> dict:
+def build_payload(category: str, severity: str) -> dict:
     locality = random.choice(LOCALITIES)
     template = random.choice(TEMPLATES[category])
-    description = template.format(locality=locality)
+    description = f"{SEVERITY_MODIFIERS[severity]} {template.format(locality=locality)}"
 
     # Small cluster around Ranchi rather than a uniform city-wide scatter.
     latitude = FALLBACK_LAT + random.uniform(-0.045, 0.045)
@@ -151,9 +167,13 @@ def seed(base_url: str, count: int) -> None:
     success = 0
     failed = 0
 
+    severity_counts = {level: 0 for level in SEVERITY_MODIFIERS}
+
     for index in range(1, count + 1):
         category = choose_category()
-        payload = build_payload(category)
+        severity = SEVERITY_SEQUENCE[(index - 1) % len(SEVERITY_SEQUENCE)]
+        severity_counts[severity] += 1
+        payload = build_payload(category, severity)
 
         try:
             response = requests.post(
@@ -168,7 +188,9 @@ def seed(base_url: str, count: int) -> None:
                 print(
                     f"[{index:02d}/{count}] "
                     f"{data['ai_category']:<24} "
-                    f"| {data['assigned_department']}"
+                    f"| {data['assigned_department']:<30} "
+                    f"| severity={data.get('ai_severity', 'n/a'):<8} "
+                    f"| priority={data.get('priority_score', 'n/a')}"
                 )
             else:
                 failed += 1
@@ -188,6 +210,8 @@ def seed(base_url: str, count: int) -> None:
     print("=" * 64)
     print(f"Successful : {success}")
     print(f"Failed     : {failed}")
+    print("Severity target mix:")
+    print("  " + ", ".join(f"{level}={severity_counts[level]}" for level in SEVERITY_MODIFIERS))
 
     if success:
         print(f"\nDashboard: {base_url}")

@@ -111,7 +111,7 @@ class NLPProcessor:
 
         # Load Whisper once at startup so the first voice report does not also
         # pay the model initialization cost.
-        self.whisper_model = whisper.load_model("tiny")
+        self.whisper_model = whisper.load_model("base")
 
         try:
             self.nlp = spacy.load("en_core_web_sm")

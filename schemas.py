@@ -36,6 +36,7 @@ class ComplaintUpdate(BaseModel):
     status: Optional[ComplaintStatus] = None
     assigned_department: Optional[ComplaintDepartment] = None
     progress_message: Optional[str] = Field(default=None, max_length=500)
+    delay_reason: Optional[str] = None
 
 
 class ProgressUpdate(BaseModel):
@@ -72,6 +73,10 @@ class ComplaintResponse(BaseModel):
     root_cause_confidence: Optional[float] = None
     recommended_action: Optional[str] = None
     prediction_basis: Optional[str] = None
+    
+    is_escalated: bool = False
+    delay_reason: Optional[str] = None
+    close_confirmed_at: Optional[datetime] = None
 
     priority_score: int = 0
     priority_reason: str = ""
@@ -87,6 +92,7 @@ class ComplaintResponse(BaseModel):
         "resolved_at",
         "updated_at",
         "last_verified_at",
+        "close_confirmed_at",
         when_used="json",
     )
     def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
