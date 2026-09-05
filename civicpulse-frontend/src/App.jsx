@@ -715,6 +715,18 @@ function Profile({ lang, setLang, showToast, nav, theme, setTheme }) {
           <p className="muted small-text">Data access and processing follow applicable consent, privacy and data-governance requirements.</p>
         </div>
 
+        <div className="setting-section">
+          <h3>Emergency Contacts</h3>
+          <div className="helpline-grid">
+            <div className="helpline-item"><b>112</b><span>Police</span></div>
+            <div className="helpline-item"><b>101</b><span>Fire</span></div>
+            <div className="helpline-item"><b>102</b><span>Ambulance</span></div>
+            <div className="helpline-item"><b>1091</b><span>Women</span></div>
+            <div className="helpline-item"><b>1912</b><span>Electricity</span></div>
+            <div className="helpline-item"><b>1916</b><span>Water</span></div>
+          </div>
+        </div>
+
         <div style={{ marginTop: '2rem', textAlign: 'center' }}>
           <button className="text-btn" style={{ color: '#e53e3e' }} onClick={handleLogout}>Sign Out</button>
         </div>
