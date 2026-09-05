@@ -65,6 +65,8 @@ const Icon = ({ name, size = 20 }) => {
     edit: <><path {...p} d="M12 20h9" /><path {...p} d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z" /></>,
     refresh: <><path {...p} d="M20 11a8 8 0 0 0-14.8-4L3 10" /><path {...p} d="M3 5v5h5M4 13a8 8 0 0 0 14.8 4L21 14" /><path {...p} d="M21 19v-5h-5" /></>,
     globe: <><circle {...p} cx="12" cy="12" r="9" /><path {...p} d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></>,
+    clock: <><circle {...p} cx="12" cy="12" r="9" /><path {...p} d="M12 7v5l3 2" /></>,
+    message: <><path {...p} d="M4 5h16v11H8l-4 4z" /><path {...p} d="M8 9h8M8 12h5" /></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24">{paths[name] || paths.info}</svg>;
 };
@@ -214,14 +216,20 @@ function App() {
       showToast('Add a description, photo, or voice note first.');
       return;
     }
+    const hasVoice = Boolean(voiceDataUrl);
+    const hasPhoto = Boolean(photo || complaint.media_url);
     setAiError('');
     setAiProgress(0);
     setScreen('analysis');
 
     try {
+      // Reading the report is immediate; optional modalities are shown as
+      // skipped in the UI instead of pretending they are being processed.
+      setAiProgress(1);
+
       let transcript = voiceTranscript;
-      if (voiceDataUrl && !transcript) {
-        setAiProgress(2);
+      if (hasVoice && !transcript) {
+        setAiProgress(1);
         const voiceResponse = await fetch(`${API_BASE}/api/transcribe-audio`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -231,9 +239,13 @@ function App() {
         if (!voiceResponse.ok) throw new Error(voiceData.detail || `Voice transcription failed (${voiceResponse.status})`);
         transcript = voiceData.text || '';
         setVoiceTranscript(transcript);
+        setAiProgress(2);
       }
 
-      setAiProgress(3);
+      // The backend combines vision, category, severity and routing into one
+      // analysis call. Keep the actually-active modality on screen while that
+      // call is running instead of showing an unrelated step.
+      setAiProgress(hasPhoto ? 2 : 3);
       const response = await fetch(`${API_BASE}/api/analyze-complaint`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -358,7 +370,7 @@ function App() {
             analyze={analyze}
           />
         )}
-        {screen === 'analysis' && <Analysis progress={aiProgress} error={aiError} retry={analyze} />}
+        {screen === 'analysis' && <Analysis progress={aiProgress} error={aiError} retry={analyze} hasVoice={Boolean(voiceDataUrl)} hasPhoto={Boolean(photo || complaint.media_url)} />}
         {screen === 'result' && <Result complaint={complaint} writtenDescription={writtenDescription} voiceTranscript={voiceTranscript} review={() => nav('review')} />}
         {screen === 'review' && <Review complaint={complaint} writtenDescription={writtenDescription} voiceTranscript={voiceTranscript} photo={photo} seconds={seconds} edit={() => nav('report')} submit={submit} />}
         {screen === 'submitting' && <Submitting />}
@@ -447,10 +459,24 @@ function Evidence({ complaint, photo, voiceUrl, seconds, recording, start, stop,
   return <div className="page"><Header title="Add Evidence" back={() => window.history.back()} /><main><Stepper active={1} /><div className="screen-title"><p className="eyebrow">STEP 2 OF 4</p><h1>Strengthen your report</h1><p className="muted">Evidence helps CivicPulse AI understand the issue with greater context.</p></div><div className="evidence-card"><div className="card-top"><b>Photo evidence</b><span className={`tag ${photo ? 'success' : ''}`}>{photo ? 'Added' : 'Optional'}</span></div>{photo ? <img className="photo-preview" src={photo} alt="Civic evidence" /> : <div className="photo-placeholder"><Icon name="camera" size={32} /><b>No photo added</b><span>You can continue with text or voice.</span></div>}</div><div className="evidence-card"><div className="card-top"><b>Voice note</b><span className="tag">{voiceUrl ? `00:${String(seconds).padStart(2, '0')}` : 'Optional'}</span></div><div className="voice-row"><button className="play-btn" onClick={recording ? stop : start}><Icon name={recording ? 'check' : 'mic'} size={18} /></button><div className="wave">{Array.from({ length: 28 }, (_, index) => <i key={index} style={{ height: `${10 + (index * 17) % 22}px` }} />)}</div><span>00:{String(seconds).padStart(2, '0')}</span></div>{voiceUrl && voiceUrl !== 'demo' && <audio className="voice-player" controls preload="metadata" src={voiceUrl}>Your browser does not support audio playback.</audio>}<small>Voice is transcribed and kept separate from the written description.</small></div><MapCard lat={complaint.latitude} lon={complaint.longitude} /><Button onClick={analyze} icon>Analyze with AI</Button></main></div>;
 }
 
-function Analysis({ progress, error, retry }) {
-  const steps = ['Reading complaint', 'Converting voice to text', 'Analyzing image', 'Identifying category', 'Assessing severity', 'Finding responsible department'];
+function Analysis({ progress, error, retry, hasVoice, hasPhoto }) {
+  const hasVoiceInput = Boolean(hasVoice);
+  const hasPhotoInput = Boolean(hasPhoto);
+  const steps = [
+    { label: 'Reading complaint' },
+    { label: 'Converting voice to text', skipped: !hasVoiceInput },
+    { label: 'Analyzing image', skipped: !hasPhotoInput },
+    { label: 'Identifying category' },
+    { label: 'Assessing severity' },
+    { label: 'Finding responsible department' },
+  ];
+
   if (error) return <div className="center-page"><div className="ai-ring"><Icon name="info" size={32} /></div><div className="eyebrow">CIVICPULSE AI</div><h1>Analysis needs attention</h1><p className="muted">{error}</p><Button onClick={retry}>Try analysis again</Button></div>;
-  return <div className="center-page"><div className="ai-loader"><div className="ai-ring"><Icon name="spark" size={34} /></div><div className="eyebrow">CIVICPULSE AI</div><h1>Understanding your report</h1><p>Running the actual local AI pipeline.</p></div><div className="analysis-list">{steps.map((step, index) => <div className={`analysis-step ${index < progress ? 'done' : index === progress ? 'active' : ''}`} key={step}><span>{index < progress ? '✓' : index === progress ? <span className="mini-spinner" /> : index + 1}</span>{step}{index < progress && <b>Done</b>}</div>)}</div><div className="progress-track"><div style={{ width: `${Math.min(progress / 6, 1) * 100}%` }} /></div><p className="muted center">AI analysis runs locally in this demo.</p></div>;
+
+  return <div className="center-page"><div className="ai-loader"><div className="ai-ring"><Icon name="spark" size={34} /></div><div className="eyebrow">CIVICPULSE AI</div><h1>Understanding your report</h1><p>{hasPhotoInput || hasVoiceInput ? 'Combining the evidence you provided with the complaint context.' : 'Understanding the complaint text and location context.'}</p></div><div className="analysis-list">{steps.map((step, index) => {
+    const status = step.skipped ? 'skipped' : index < progress ? 'done' : index === progress ? 'active' : 'pending';
+    return <div className={`analysis-step ${status}`} key={step.label}><span>{status === 'skipped' ? '—' : status === 'done' ? '✓' : status === 'active' ? <span className="mini-spinner" /> : index + 1}</span>{step.label}{status === 'skipped' && <b>Skipped</b>}{status === 'done' && <b>Done</b>}</div>;
+  })}</div><div className="progress-track"><div style={{ width: `${Math.min(progress / 6, 1) * 100}%` }} /></div><p className="muted center">Fast-path civic reports are classified locally without unnecessary transformer inference.</p></div>;
 }
 
 function Result({ complaint, writtenDescription, voiceTranscript, review }) {
@@ -458,8 +484,26 @@ function Result({ complaint, writtenDescription, voiceTranscript, review }) {
   const category = complaint.ai_category || 'General Maintenance';
   const department = complaint.assigned_department || 'Unassigned';
   const confidence = complaint.ai_confidence_score;
+  const priority = Number.isFinite(Number(complaint.priority_score)) ? Number(complaint.priority_score) : null;
+  const estimate = complaint.estimated_resolution_hours;
   const title = severity === 'Critical' ? 'Critical civic issue' : severity === 'High' ? 'High-priority civic issue' : severity === 'Medium' ? 'Medium-priority civic issue' : 'Civic issue identified';
-  return <div className="page"><Header title="AI Results" back={() => window.history.back()} /><main><div className="result-hero"><div className="check-ring"><Icon name="spark" size={25} /></div><p className="eyebrow">ANALYSIS COMPLETE</p><h1>{title}</h1><p>AI classified the submitted context and selected a municipal department.</p></div><div className="insight-card"><div className="insight-top"><span className="ai-icon mini"><Icon name="spark" size={17} /></span><div><b>CivicPulse AI decision</b><span>Voice · image · text context</span></div>{typeof confidence === 'number' && <span className="confidence">{Math.round(confidence * 100)}%</span>}</div><div className="result-grid"><Info label="Category" value={category} /><Info label="Severity" value={<Status>{severity}</Status>} /><Info label="Department" value={department} /><Info label="Status" value={<Status>{complaint.status || 'Pending'}</Status>} /></div></div><div className="detail-card"><div className="section-head"><h2>Written description</h2></div><p>{writtenDescription || 'No written description provided.'}</p></div>{voiceTranscript && <div className="detail-card"><div className="section-head"><h2>Voice transcription</h2></div><p>{voiceTranscript}</p></div>}<div className="detail-card"><Info label="Location" value={`${Number(complaint.latitude).toFixed(4)}, ${Number(complaint.longitude).toFixed(4)}`} /></div><div className="explain"><Icon name="spark" size={18} /><span>The AI result is generated from the submitted report context. Related nearby reports are evaluated separately for priority and duplicate signals.</span></div><Button onClick={review} icon>Review Report</Button></main></div>;
+  return <div className="page"><Header title="AI Results" back={() => window.history.back()} /><main>
+    <div className="result-hero"><div className="check-ring"><Icon name="spark" size={25} /></div><p className="eyebrow">ANALYSIS COMPLETE</p><h1>{title}</h1><p>AI classified the submitted context and selected a municipal department.</p></div>
+    <div className="insight-card"><div className="insight-top"><span className="ai-icon mini"><Icon name="spark" size={17} /></span><div><b>CivicPulse AI decision</b><span>Voice · image · text context</span></div>{typeof confidence === 'number' && <span className="confidence">{Math.round(confidence * 100)}%</span>}</div>
+      <div className="result-grid"><Info label="Category" value={category} /><Info label="Severity" value={<Status>{severity}</Status>} /><Info label="Department" value={department} /><Info label="Status" value={<Status>{complaint.status || 'Pending'}</Status>} /></div>
+    </div>
+    <div className="result-grid">
+      {priority !== null && <div className="detail-card"><Info label="Operational priority" value={`${priority}/100`} /><p className="muted small-text">{complaint.priority_reason || 'Severity + nearby report context'}</p></div>}
+      <div className="detail-card"><Info label="Projected service window" value={estimate ? `${estimate} hours` : 'Calculating'} /><p className="muted small-text">{complaint.prediction_basis || 'Prototype decision-support baseline'}</p></div>
+    </div>
+    <div className="detail-card"><div className="section-head"><h2>Probable contributing factor</h2>{complaint.root_cause_confidence != null && <span className="tag success">{Math.round(Number(complaint.root_cause_confidence) * 100)}% signal</span>}</div><p>{complaint.probable_root_cause || 'Not available'}</p>{(complaint.root_cause_factors || []).length > 0 && <p className="muted small-text">Signals: {(complaint.root_cause_factors || []).join(' · ')}</p>}<div className="explain"><Icon name="spark" size={16} /><span>{complaint.recommended_action || 'Inspect the reported location and assign the appropriate municipal action.'}</span></div></div>
+    <div className="detail-card"><div className="section-head"><h2>Written description</h2></div><p>{writtenDescription || 'No written description provided.'}</p></div>
+    {voiceTranscript && <div className="detail-card"><div className="section-head"><h2>Voice transcription</h2></div><p>{voiceTranscript}</p></div>}
+    <div className="detail-card"><Info label="Location" value={`${Number(complaint.latitude).toFixed(4)}, ${Number(complaint.longitude).toFixed(4)}`} /></div>
+    {Number(complaint.duplicate_count || 0) > 0 && <div className="similar"><span className="similar-icon">!</span><div><b>{complaint.duplicate_count} similar report{Number(complaint.duplicate_count) === 1 ? '' : 's'} nearby</b><p>Potential duplicates can strengthen the priority signal for the same civic issue.</p></div></div>}
+    <div className="explain"><Icon name="spark" size={18} /><span>The decision-support layer combines severity, local report density, community confirmations and historical resolution patterns. It is designed as a transparent hackathon prototype.</span></div>
+    <Button onClick={review} icon>Review Report</Button>
+  </main></div>;
 }
 
 const Info = ({ label, value }) => <div className="info"><span>{label}</span><b>{value}</b></div>;
@@ -483,14 +527,18 @@ function Tracking({ complaint, setComplaint, setModal }) {
     let cancelled = false;
     const loadLatest = async () => {
       if (!complaint?.id) return;
-      const previous = complaint.status || 'Pending';
+      const previousStatus = complaint.status || 'Pending';
+      const previousUpdate = complaint.updated_at || '';
       try {
         const response = await fetch(`${API_BASE}/api/complaints/${complaint.id}`);
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`);
         if (!cancelled) {
-          if (previous !== data.status) {
-            setStatusNotice(`Status updated: ${previous} → ${data.status}`);
+          if (previousStatus !== data.status) {
+            setStatusNotice(`Status updated: ${previousStatus} → ${data.status}`);
+            setTimeout(() => setStatusNotice(''), 3500);
+          } else if (previousUpdate && previousUpdate !== data.updated_at && Array.isArray(data.progress_updates) && data.progress_updates.length) {
+            setStatusNotice('A new progress update is available.');
             setTimeout(() => setStatusNotice(''), 3500);
           }
           setComplaint((current) => ({ ...current, ...data }));
@@ -510,7 +558,7 @@ function Tracking({ complaint, setComplaint, setModal }) {
   const status = complaint.status || 'Pending';
   const stages = ['Report Submitted', 'AI Analysis Completed', 'Department Assigned', 'Pending', 'Acknowledged', 'In Progress', 'Resolved'];
   const stageIndex = Math.max(0, stages.indexOf(status));
-  const prediction = status === 'Resolved' ? 'Resolved' : (complaint.estimated_resolution_hours ? `${complaint.estimated_resolution_hours} hours` : severityWindow(complaint.ai_severity));
+  const estimate = status === 'Resolved' ? null : complaint.estimated_resolution_hours;
   const verificationKey = complaint?.id ? `civicpulse.verified.${complaint.id}` : null;
   const alreadyVerified = verificationKey ? localStorage.getItem(verificationKey) === '1' : false;
 
@@ -520,16 +568,29 @@ function Tracking({ complaint, setComplaint, setModal }) {
       const response = await fetch(`${API_BASE}/api/complaints/${complaint.id}/verify`, { method: 'POST' });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || 'Could not confirm this issue');
-      setComplaint((current) => ({ ...current, verification_count: data.verification_count, last_verified_at: data.last_verified_at, updated_at: data.last_verified_at }));
+      setComplaint((current) => ({ ...current, verification_count: data.verification_count, last_verified_at: data.last_verified_at, updated_at: data.last_verified_at, priority_score: data.priority_score, priority_reason: data.priority_reason, nearby_report_count: data.nearby_report_count, duplicate_count: data.duplicate_count }));
       localStorage.setItem(verificationKey, '1');
-      setStatusNotice('Your confirmation was recorded.');
+      setStatusNotice('Your confirmation was recorded and priority was recalculated.');
       setTimeout(() => setStatusNotice(''), 3000);
     } catch (error) {
       setStatusNotice(error.message || 'Could not confirm this issue');
     }
   };
 
-  return <div className="page"><Header title="Track Report" back={() => window.history.back()} /><main>{statusNotice && <div className="detail-card"><b>{statusNotice}</b></div>}<div className="track-head"><div><p className="eyebrow">#{complaint.id?.slice(0, 8).toUpperCase() || 'CP-NEW'}</p><h1>{complaint.description || 'Civic issue report'}</h1><span className="muted">{complaint.ai_category || 'Unclassified'} · {complaint.ai_severity || 'Low'} priority</span></div><Status>{status}</Status></div><div className="detail-card compact"><Info label="Location" value={`${complaint.latitude?.toFixed(4) ?? '—'}, ${complaint.longitude?.toFixed(4) ?? '—'}`} /><Info label="Assigned department" value={complaint.assigned_department || 'Unassigned'} />{complaint.resolved_at && <Info label="Resolved at" value={formatLocalTime(complaint.resolved_at)} />}</div><div className="timeline">{stages.map((stage, index) => <div className={`timeline-item ${index < stageIndex ? 'done ' : ''}${index === stageIndex ? 'current' : ''}`} key={stage}><div className="timeline-dot">{index < stageIndex ? '✓' : index === stageIndex ? '•' : ''}</div><div><b>{stage}</b>{index === stageIndex && <span>{status === 'Resolved' ? 'Issue resolved' : `Current status · ${status}`}</span>}</div></div>)}</div><div className="estimate"><span className="ai-icon mini"><Icon name="spark" size={16} /></span><div><b>Projected service window</b><p>{prediction === 'Resolved' ? 'This complaint has been resolved.' : `Prototype service estimate: ${prediction}.`}</p>{complaint.probable_root_cause && <small>Contributing factor: {complaint.probable_root_cause}</small>}</div></div><div className="community"><div className="avatars"><span>AI</span><span>GPS</span><span>✓</span></div><div><b>Community verification</b><p>{complaint.verification_count || 0} confirmations</p></div><button onClick={verify} disabled={alreadyVerified}>{alreadyVerified ? 'Confirmed' : 'Confirm'}</button></div><p className="muted center">{syncing ? 'Syncing latest status…' : syncError || 'Status synced with CivicPulse Ops'}</p></main></div>;
+  const updates = Array.isArray(complaint.progress_updates) ? complaint.progress_updates : [];
+  const visibleUpdates = updates.slice().reverse();
+  return <div className="page"><Header title="Track Report" back={() => window.history.back()} /><main>
+    {statusNotice && <div className="detail-card notification-banner"><b>{statusNotice}</b></div>}
+    <div className="track-head"><div><p className="eyebrow">#{complaint.id?.slice(0, 8).toUpperCase() || 'CP-NEW'}</p><h1>{complaint.description || 'Civic issue report'}</h1><span className="muted">{complaint.ai_category || 'Unclassified'} · {complaint.ai_severity || 'Low'} priority</span></div><Status>{status}</Status></div>
+    <div className="detail-card compact"><Info label="Location" value={`${complaint.latitude?.toFixed(4) ?? '—'}, ${complaint.longitude?.toFixed(4) ?? '—'}`} /><Info label="Assigned department" value={complaint.assigned_department || 'Unassigned'} />{complaint.resolved_at && <Info label="Resolved at" value={formatLocalTime(complaint.resolved_at)} />}</div>
+    <div className="timeline">{stages.map((stage, index) => <div className={`timeline-item ${index < stageIndex ? 'done ' : ''}${index === stageIndex ? 'current' : ''}`} key={stage}><div className="timeline-dot">{index < stageIndex ? '✓' : index === stageIndex ? '•' : ''}</div><div><b>{stage}</b>{index === stageIndex && <span>{status === 'Resolved' ? 'Issue resolved' : `Current status · ${status}`}</span>}</div></div>)}</div>
+    <div className="estimate"><span className="ai-icon mini"><Icon name="clock" size={16} /></span><div><b>{status === 'Resolved' ? 'Resolution complete' : 'Projected service window'}</b><p>{status === 'Resolved' ? 'This complaint has been resolved.' : estimate ? `Estimated resolution: ${estimate} hours.` : severityWindow(complaint.ai_severity)}</p><small>{complaint.prediction_basis || 'Prototype prediction using severity and operational context.'}</small></div></div>
+    <div className="detail-card"><div className="section-head"><h2>Contributing factor</h2>{complaint.root_cause_confidence != null && <span className="tag success">{Math.round(Number(complaint.root_cause_confidence) * 100)}% signal</span>}</div><p>{complaint.probable_root_cause || 'Not available'}</p>{(complaint.root_cause_factors || []).length > 0 && <p className="muted small-text">Signals: {(complaint.root_cause_factors || []).join(' · ')}</p>}{complaint.recommended_action && <div className="explain"><Icon name="spark" size={16} /><span>{complaint.recommended_action}</span></div>}</div>
+    <div className="detail-card notification-card"><div className="section-head"><h2>Progress notifications</h2><span className="tag success">Live</span></div>{visibleUpdates.length ? <div className="notification-list">{visibleUpdates.map((item, index) => <div className="notification-item" key={`${item.timestamp}-${index}`}><span className="notification-icon"><Icon name={item.kind === 'admin' || item.kind === 'assignment' ? 'message' : item.kind === 'community' ? 'check' : 'bell'} size={14} /></span><div><b>{item.message}</b><span>{formatLocalTime(item.timestamp)}</span></div></div>)}</div> : <p className="muted">No progress notifications yet.</p>}</div>
+    <div className="community"><div className="avatars"><span>{Number(complaint.verification_count || 0)}</span><span>GPS</span><span>✓</span></div><div><b>Community verification</b><p>{complaint.verification_count || 0} confirmation{Number(complaint.verification_count || 0) === 1 ? '' : 's'} · priority {Number(complaint.priority_score || 0)}/100</p></div><button onClick={verify} disabled={alreadyVerified}>{alreadyVerified ? 'Confirmed' : 'Confirm'}</button></div>
+    {Number(complaint.duplicate_count || 0) > 0 && <div className="similar"><span className="similar-icon">!</span><div><b>{complaint.duplicate_count} possible duplicate report{Number(complaint.duplicate_count) === 1 ? '' : 's'}</b><p>Nearby reports with similar issue context help identify recurring civic problems.</p></div></div>}
+    <p className="muted center">{syncing ? 'Syncing latest status…' : syncError || 'Status and progress are synced with CivicPulse Ops'}</p>
+  </main></div>;
 }
 
 const severityWindow = (severity) => ({ Critical: '24 hours', High: '48 hours', Medium: '3–5 days', Low: '5–7 days' }[severity] || 'not available');

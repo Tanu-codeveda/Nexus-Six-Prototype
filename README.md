@@ -4,56 +4,105 @@
 
 It addresses **SVH26005 — Crowdsourced Civic Issue Reporting and Resolution System** under the **Clean and Green Technology** theme for the **Government of Jharkhand, Department of Higher and Technical Education**.
 
-## Overview
+## What the prototype does
 
-CivicPulse connects a citizen-facing reporting application with an administrative operations dashboard and an AI-assisted processing pipeline.
+CivicPulse connects a citizen-facing reporting application with a municipal operations dashboard and an AI-assisted processing pipeline.
 
-Citizens can report civic issues using GPS/location, written descriptions, photographs, and short voice notes. The platform processes reports, assigns categories, severity and departments, stores the complaint lifecycle, and exposes the information through an interactive operations dashboard with map, queue, filtering, tracking and analytics.
+Citizens can report an issue with:
 
-## Key Features
+- GPS/location
+- Written description
+- Photo evidence
+- A short voice note (maximum 5 seconds)
 
-### Citizen App
+The backend then performs AI-assisted analysis, routes the report to a department, calculates operational priority, detects likely duplicate reports, estimates a service window, generates a probable contributing-factor insight, and stores a citizen-facing progress feed.
 
-- Mobile-first civic issue reporting
-- Automatic GPS/location capture
-- Photo capture/upload
-- Voice-note recording with a 5-second limit
-- Hindi/English speech transcription through the backend
-- Written complaint description
-- AI-assisted category and severity analysis
-- Department assignment
-- Complaint confirmation
-- Complaint tracking
+The operations dashboard shows the same data on a live map with a density heatmap, queue, filters, priority scores and analytics.
+
+## Main features
+
+### Citizen app
+
+- Mobile-first issue reporting
+- Automatic GPS capture with Ranchi fallback for demo use
+- Camera/photo capture
+- 5-second voice recording
+- Local Whisper speech transcription
+- Separate written description and voice transcript
+- AI-assisted category and severity classification
+- Automatic department routing
+- Transparent operational priority score
+- Service-time prediction using severity, category, historical resolutions and department workload
+- Probable root-cause / contributing-factor insight
+- Recommended municipal action
+- Complaint confirmation and tracking
+- Live status polling
+- In-app progress notifications
+- Community verification
 - My Reports history
-- Community verification for nearby reports
 
-### CivicPulse Ops — Admin Dashboard
+### CivicPulse Ops dashboard
 
-- Live complaint queue
-- Interactive Leaflet map centred on Ranchi, Jharkhand
-- Category, severity, status, department and search filters
-- Complaint detail view
+- Real backend-backed complaint queue
+- Leaflet/OpenStreetMap issue map centred on Ranchi
+- Severity-coded complaint markers
+- Toggleable complaint-density heatmap
+- Automatic hotspot detection
+- Category, severity, status and department filters
+- Search across complaint and intelligence fields
+- Transparent priority score and explanation
+- Possible duplicate report indicators
+- Complaint detail and submitted photo
 - Department assignment
-- Status lifecycle management:
+- Status lifecycle:
   `Pending → Acknowledged → In Progress → Resolved`
-- Priority/hotspot visualization
-- Duplicate-report indicators
-- Reporting analytics
-- Response-time and resolution insights
+- Citizen-facing progress feed
+- Admin progress message publishing
+- Response-time analytics
+- Resolution-rate analytics
+- Predicted resolution-time metric
+- CSV export
 
-## AI Pipeline
+## AI / decision-support pipeline
 
-The prototype combines multiple AI and processing components:
+```text
+Citizen Report
+(GPS + Text + Voice + Photo)
+          |
+          v
+     FastAPI API
+          |
+   +------+------+----------------+
+   |             |                |
+   v             v                v
+Whisper      NLP / Routing   Computer Vision
+   |             |                |
+   +-------------+----------------+
+                 |
+                 v
+       Complaint Intelligence
+                 |
+      +----------+----------+
+      |          |          |
+      v          v          v
+   Priority   Duplicate   Root Cause
+    Score      Signals     Insight
+      |
+      v
+ Resolution-time Prediction
+      |
+      v
+ Department + Status + Progress
+      |
+      v
+ Admin Dashboard <----> Citizen Tracking
+```
 
-- **Computer Vision:** OpenCV + Ultralytics/YOLO
-- **Voice:** Local Whisper-based transcription
-- **NLP:** Text processing and civic category/department mapping
-- **Priority & Routing:** Prototype decision logic based on complaint context
-- **Integration:** FastAPI connects the citizen UI, AI components, database and admin dashboard
+### Important prototype limitation
 
-> **Prototype disclaimer:** This is a hackathon prototype. The current AI pipeline uses lightweight/pre-trained components and prototype-level decision logic; it is not a production-trained municipal AI system.
+The current AI stack uses lightweight/pre-trained components and transparent prototype decision logic. The generic YOLO model is **not** a civic-domain model trained specifically for potholes, streetlights or municipal infrastructure, so CV output should be treated as a prototype signal rather than a production-grade damage assessment.
 
-## Technology Stack
+## Technology stack
 
 ### Backend
 
@@ -63,15 +112,14 @@ The prototype combines multiple AI and processing components:
 - SQLAlchemy
 - SQLite
 - Pydantic
-- Requests
 
-### AI / Data
+### AI / data
 
 - OpenCV
 - Ultralytics / YOLO
 - Whisper
 - spaCy
-- Transformers
+- Transformers / BART zero-shot classification
 - Faker
 
 ### Frontend
@@ -81,8 +129,10 @@ The prototype combines multiple AI and processing components:
 - JavaScript / JSX
 - CSS
 - Leaflet / OpenStreetMap
+- Leaflet.heat
+- Chart.js
 
-## Project Structure
+## Project structure
 
 ```text
 Nexus-Six-Prototype/
@@ -98,6 +148,7 @@ Nexus-Six-Prototype/
 ├── repair_demo_timestamps.py
 ├── test_integration.py
 ├── requirements.txt
+├── README.md
 │
 ├── index.html
 ├── style.css
@@ -121,14 +172,15 @@ Nexus-Six-Prototype/
 
 ## Requirements
 
-Recommended environment:
+Recommended:
 
 - Python 3.10+
-- Node.js 18+
+- Node.js 20.19+ (or Node.js 22.12+)
 - npm
 - Git
-- FFmpeg available on the system `PATH`
-- The YOLO model file used by the prototype, such as `yolo11n.pt`
+- FFmpeg on `PATH`
+- Internet access on the first run for model/CDN resources
+- `yolo11n.pt` for the current YOLO prototype
 
 ## Installation
 
@@ -139,7 +191,7 @@ git clone https://github.com/Tanu-codeveda/Nexus-Six-Prototype.git
 cd Nexus-Six-Prototype
 ```
 
-### 2. Create and activate a Python virtual environment
+### 2. Create a Python virtual environment
 
 #### Windows / Git Bash
 
@@ -148,10 +200,10 @@ python -m venv .venv
 source .venv/Scripts/activate
 ```
 
-If `source` is unavailable:
+Alternative:
 
 ```bash
-.venv\\Scripts\\activate
+.venv\Scripts\activate
 ```
 
 #### macOS / Linux
@@ -174,14 +226,11 @@ Verify FFmpeg:
 ffmpeg -version
 ```
 
-## Running the Project
+## Run the project
 
-CivicPulse has two user interfaces backed by the same FastAPI API:
+CivicPulse uses one FastAPI backend for both the operations dashboard and the React citizen app.
 
-1. **Admin / Operations Dashboard**
-2. **Citizen React App**
-
-### Terminal 1 — Start the FastAPI backend
+### Terminal 1 — FastAPI backend
 
 From the project root:
 
@@ -189,25 +238,25 @@ From the project root:
 python -m uvicorn main:app --reload
 ```
 
-Backend:
-
-```text
-http://127.0.0.1:8000
-```
-
-Useful URLs:
+Admin dashboard:
 
 ```text
 http://127.0.0.1:8000/
+```
+
+API health:
+
+```text
 http://127.0.0.1:8000/api/health
+```
+
+Swagger API docs:
+
+```text
 http://127.0.0.1:8000/docs
 ```
 
-`/docs` provides interactive FastAPI API documentation.
-
-### Terminal 2 — Run the Citizen React App
-
-Open another terminal:
+### Terminal 2 — Citizen app
 
 ```bash
 cd civicpulse-frontend
@@ -215,187 +264,163 @@ npm install
 npm run dev
 ```
 
-Vite will normally serve the app at:
+Vite will normally show:
 
 ```text
-http://localhost:5173
+http://localhost:5173/
 ```
 
-Open that address in the browser.
-
-For the complete citizen workflow, allow browser permissions for:
+Allow browser permissions for:
 
 - Location
 - Camera
 - Microphone
 
-### Admin Dashboard
+## Populate demo complaints
 
-Once the FastAPI backend is running, open:
+The project includes a Faker-based Ranchi demo seeder.
 
-```text
-http://127.0.0.1:8000/
-```
-
-The admin dashboard reads complaint data from the backend and provides the map, filters, queue, status updates and analytics.
-
-## Populate Demo Data
-
-For a hackathon demonstration, the repository includes a Faker-based complaint seeder.
-
-Start the backend first:
+Start the backend first, then from a second terminal in the project root:
 
 ```bash
-python -m uvicorn main:app --reload
+python seed_data.py --count 50
 ```
 
-Then, from another terminal in the project root:
-
-```bash
-python seed_data.py
-```
-
-The default command generates **50 demo complaints around Ranchi, Jharkhand**.
-
-Custom count:
-
-```bash
-python seed_data.py --count 100
-```
-
-Custom API URL:
-
-```bash
-python seed_data.py --base-url http://127.0.0.1:8000
-```
+The default dataset is clustered around Ranchi areas such as Main Road, Harmu, Lalpur, Doranda, Morabadi, Kanke Road, Hinoo and other localities.
 
 After seeding, refresh the admin dashboard.
 
-## Integration Testing
+## Demo flow
 
-Start the backend:
+A strong end-to-end demonstration is:
 
-```bash
-python -m uvicorn main:app --reload
+```text
+1. Start FastAPI
+2. Seed 50 Ranchi complaints
+3. Open CivicPulse Ops
+4. Show map + heatmap + queue + analytics
+5. Open the Citizen React app
+6. Capture GPS
+7. Enter a complaint such as:
+   "Large pothole on Main Road causing danger to two-wheelers after rain."
+8. Add a photo
+9. Record the short voice note
+10. Run AI analysis
+11. Show category + severity + department
+12. Show priority + duplicate signal + root-cause insight
+13. Submit the complaint
+14. Open tracking
+15. In Ops, acknowledge / start work / resolve it
+16. Publish a progress message
+17. Show the live citizen notification and updated timeline
+18. Confirm the issue using community verification
 ```
 
-Then, from the project root in a second terminal:
+## Example API test payload
+
+```json
+{
+  "latitude": 23.3441,
+  "longitude": 85.3096,
+  "media_url": null,
+  "description": "Large pothole on Main Road causing danger to two-wheelers after rain.",
+  "voice_transcript": "Large pothole on Main Road causing danger to bikes."
+}
+```
+
+Send it to:
+
+```text
+POST /api/analyze-complaint
+```
+
+or create a real complaint with:
+
+```text
+POST /api/complaints
+```
+
+## Integration testing
+
+With FastAPI running:
 
 ```bash
 python test_integration.py
 ```
 
-The integration tests cover the core API flow, including:
+The integration checks cover:
 
-- Health check
-- Complaint listing
-- Complaint creation
-- Fetching an individual complaint
-- Complaint updates
+- API health
+- AI analysis and category routing
+- complaint creation
+- priority and decision-support fields
+- admin progress-message publishing
+- status lifecycle timestamps
+- citizen-facing progress events
+- community verification and priority recalculation
+- request validation
 
-## API Overview
+## API overview
 
 | Method | Endpoint | Purpose |
 |---|---|---|
 | `GET` | `/api/health` | API health check |
+| `POST` | `/api/analyze-complaint` | Run AI/decision-support analysis without creating a record |
 | `POST` | `/api/complaints` | Create a complaint |
-| `GET` | `/api/complaints` | List complaints |
-| `GET` | `/api/complaints/{id}` | Get one complaint |
-| `PATCH` | `/api/complaints/{id}` | Update status/department |
+| `GET` | `/api/complaints` | List complaints with intelligence fields |
+| `GET` | `/api/complaints/{id}` | Get one complaint and its progress feed |
+| `PATCH` | `/api/complaints/{id}` | Update status, department and progress message |
+| `POST` | `/api/complaints/{id}/verify` | Record community confirmation and recalculate priority |
 | `POST` | `/api/transcribe-audio` | Transcribe voice input |
-| `POST` | `/api/analyze-complaint` | Run complaint analysis |
 
-Interactive API documentation:
+## Decision-support details
 
-```text
-http://127.0.0.1:8000/docs
-```
+### Dynamic priority
 
-## Demo Data Coverage
+The priority score combines:
 
-The included seeder uses **Ranchi, Jharkhand** as its centre and generates reports around areas such as:
+- Severity
+- Nearby active-report density
+- Likely duplicate reports
+- Community confirmations
+- Age of unresolved complaints
+- Public-safety category weighting
 
-- Main Road
-- Harmu
-- Lalpur
-- Doranda
-- Morabadi
-- Kanke Road
-- Booty More
-- Ashok Nagar
-- Argora
-- Ratu Road
-- Hinoo
-- Kokar
-- Kadru
-- Bariatu
-- Namkum
+The API also returns a human-readable `priority_reason` so the dashboard can explain the score instead of showing a black-box number.
 
-## End-to-End Architecture
+### Duplicate detection
 
-```text
-               ┌──────────────────────┐
-               │    Citizen App       │
-               │       React          │
-               └──────────┬───────────┘
-                          │
-               GPS / Photo / Voice / Text
-                          │
-                          ▼
-               ┌──────────────────────┐
-               │     FastAPI API      │
-               └──────────┬───────────┘
-                          │
-           ┌──────────────┼──────────────┐
-           │              │              │
-           ▼              ▼              ▼
-      Computer        Whisper/NLP    Priority &
-       Vision            AI           Routing
-           │              │              │
-           └──────────────┼──────────────┘
-                          ▼
-                   ┌──────────────┐
-                   │ SQLAlchemy + │
-                   │    SQLite    │
-                   └──────┬───────┘
-                          │
-                          ▼
-               ┌──────────────────────┐
-               │  CivicPulse Ops      │
-               │  Admin Dashboard     │
-               └──────────┬───────────┘
-                          │
-               ┌──────────┼──────────┐
-               ▼          ▼          ▼
-              Map       Queue     Analytics
-                          │
-                          ▼
-                 Department + Status
-                      Updates
-                          │
-                          ▼
-                   Citizen Tracking
-```
+Likely duplicates are identified using a small geospatial radius plus category and text-context similarity. This is intentionally lightweight and intended for demo-scale data.
+
+### Resolution-time prediction
+
+The service window uses historical resolved complaints where enough history exists, then adjusts for severity and the current open workload of the assigned department. With limited history, it falls back to a transparent category/severity baseline.
+
+### Root-cause insight
+
+The prototype derives a probable contributing factor from the issue category and report context, for example drainage-related deterioration for a rain-linked pothole report. It also exposes supporting signals and a recommended municipal action.
+
+### Citizen notifications
+
+Notifications are implemented as an in-app progress feed tied to the backend record. Status changes, department assignments, community confirmations and admin-written progress messages are stored as timestamped events. This is a prototype notification mechanism; push/SMS/email delivery is a future deployment layer.
 
 ## Troubleshooting
 
-### Python module is missing
+### `vite` is not recognized
 
-Make sure the virtual environment is activated:
-
-```bash
-.venv\\Scripts\\activate
-```
-
-Then reinstall:
+Run:
 
 ```bash
-pip install -r requirements.txt
+cd civicpulse-frontend
+npm install
+npm run dev
 ```
 
-### Frontend cannot connect to the API
+`node_modules` is intentionally excluded from Git and must be recreated per machine.
 
-Make sure the FastAPI server is running:
+### Frontend cannot reach the API
+
+Make sure the backend is running:
 
 ```bash
 python -m uvicorn main:app --reload
@@ -403,7 +428,7 @@ python -m uvicorn main:app --reload
 
 Then reload the React app.
 
-### Voice transcription is not working
+### Voice transcription fails
 
 Check:
 
@@ -411,73 +436,25 @@ Check:
 ffmpeg -version
 ```
 
-Also verify that the Python AI dependencies from `requirements.txt` are installed.
+Also make sure the Python AI dependencies are installed and the local Whisper model can load.
 
-### Camera, microphone or location does not work
+### Camera / microphone / GPS fails
 
-Allow the browser to use:
+Allow browser permissions and retry. When browser GPS is unavailable, the citizen demo falls back to Ranchi coordinates.
 
-- Camera
-- Microphone
-- Location
+### Model downloads appear on first startup
 
-### Dashboard has no demo complaints
+The first startup may download the YOLO and Hugging Face model resources. Subsequent runs should use the local model cache where available.
 
-Run:
+## Current prototype boundary
 
-```bash
-python seed_data.py --count 50
-```
+This repository is a functional hackathon prototype, not a production municipal platform. Production deployment would additionally require stronger civic-domain model validation, authentication/authorization, secure media storage, a production database, monitoring, rate limiting, privacy controls, push/SMS/email notification infrastructure and deployment hardening.
 
-Then refresh:
+## Team Nexus Six
 
-```text
-http://127.0.0.1:8000/
-```
-
-## Recommended Hackathon Demo Flow
-
-```text
-1. Start FastAPI
-       ↓
-2. Seed 50 Ranchi complaints
-       ↓
-3. Open CivicPulse Ops dashboard
-       ↓
-4. Show live map + queue + analytics
-       ↓
-5. Open the Citizen React App
-       ↓
-6. Submit a report using text/photo/voice/GPS
-       ↓
-7. Show AI analysis + department assignment
-       ↓
-8. Return to Admin Dashboard
-       ↓
-9. Update complaint status
-       ↓
-10. Show the updated citizen tracking state
-```
-
-## Team
-
-### Team Nexus Six
-
-**Hackathon:** Smart VIT Hackathon 2026  
-**Problem Statement:** SVH26005  
-**Problem:** Crowdsourced Civic Issue Reporting and Resolution System  
-**Theme:** Clean and Green Technology  
+**Hackathon:** Smart VIT Hackathon 2026
+**Problem Statement:** SVH26005
+**Problem:** Crowdsourced Civic Issue Reporting and Resolution System
+**Theme:** Clean and Green Technology
+**Team ID:** svh-10125
 **Organization:** Government of Jharkhand — Department of Higher and Technical Education
-
-## Production Considerations
-
-This repository represents a hackathon prototype. A production civic deployment would require, among other things:
-
-- Stronger validation of AI models on civic-domain datasets
-- Secure authentication and authorization
-- Production-grade media storage
-- A production database
-- Monitoring and observability
-- Rate limiting
-- Privacy controls
-- Deployment hardening

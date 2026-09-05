@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class ComplaintStatus(str, Enum):
@@ -29,14 +29,19 @@ class ComplaintCreate(BaseModel):
     longitude: Optional[float] = None
     media_url: Optional[str] = None
     description: Optional[str] = None
-    # Produced by the voice endpoint on the citizen device. Keeping it separate
-    # preserves the multimodal input while allowing NLP to use both signals.
     voice_transcript: Optional[str] = None
 
 
 class ComplaintUpdate(BaseModel):
     status: Optional[ComplaintStatus] = None
     assigned_department: Optional[ComplaintDepartment] = None
+    progress_message: Optional[str] = Field(default=None, max_length=500)
+
+
+class ProgressUpdate(BaseModel):
+    timestamp: str
+    message: str
+    kind: str = "system"
 
 
 class ComplaintResponse(BaseModel):
@@ -60,8 +65,20 @@ class ComplaintResponse(BaseModel):
     updated_at: Optional[datetime] = None
     verification_count: int = 0
     last_verified_at: Optional[datetime] = None
+
     estimated_resolution_hours: Optional[int] = None
     probable_root_cause: Optional[str] = None
+    root_cause_factors: list[str] = Field(default_factory=list)
+    root_cause_confidence: Optional[float] = None
+    recommended_action: Optional[str] = None
+    prediction_basis: Optional[str] = None
+
+    priority_score: int = 0
+    priority_reason: str = ""
+    nearby_report_count: int = 0
+    duplicate_count: int = 0
+    possible_duplicate_ids: list[str] = Field(default_factory=list)
+    progress_updates: list[ProgressUpdate] = Field(default_factory=list)
 
     @field_serializer(
         "created_at",
@@ -75,8 +92,6 @@ class ComplaintResponse(BaseModel):
     def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
         if value is None:
             return None
-        # Database stores UTC as a naive value in SQLite. Make the UTC contract
-        # explicit on the wire so browsers do not display a shifted local time.
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc).isoformat()
@@ -86,6 +101,10 @@ class ComplaintVerificationResponse(BaseModel):
     complaint_id: str
     verification_count: int
     last_verified_at: datetime
+    priority_score: int
+    priority_reason: str
+    nearby_report_count: int
+    duplicate_count: int
 
 
 class ComplaintAnalysisResponse(BaseModel):
@@ -97,3 +116,7 @@ class ComplaintAnalysisResponse(BaseModel):
     extracted_location: Optional[str] = None
     estimated_resolution_hours: Optional[int] = None
     probable_root_cause: Optional[str] = None
+    root_cause_factors: list[str] = Field(default_factory=list)
+    root_cause_confidence: Optional[float] = None
+    recommended_action: Optional[str] = None
+    prediction_basis: Optional[str] = None
