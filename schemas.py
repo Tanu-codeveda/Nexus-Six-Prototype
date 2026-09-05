@@ -54,6 +54,10 @@ class ComplaintResponse(BaseModel):
     longitude: Optional[float]
     media_url: Optional[str]
     resolution_media_url: Optional[str] = None
+    source: str = "citizen"
+    escalation_level: int = 1
+    current_assignee: Optional[str] = None
+    sla_deadline: Optional[datetime] = None
     description: Optional[str]
     voice_transcript: Optional[str] = None
     ai_category: str
@@ -96,6 +100,7 @@ class ComplaintResponse(BaseModel):
         "updated_at",
         "last_verified_at",
         "close_confirmed_at",
+        "sla_deadline",
         when_used="json",
     )
     def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:

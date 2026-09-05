@@ -54,3 +54,7 @@ Faker==40.38.0
 openai-whisper==20250625
 spacy==3.8.11
 transformers==4.57.3
+
+APScheduler==3.11.2
+xgboost>=2.0
+pandas>=2.0

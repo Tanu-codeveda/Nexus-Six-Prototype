@@ -9,6 +9,13 @@ from database import Base
 class Complaint(Base):
     __tablename__ = "complaints"
 
+    # IoT / SLA integration fields. Existing demo databases are upgraded
+    # additively by main.py at startup.
+    source = Column(String, default="citizen", nullable=False)
+    escalation_level = Column(Integer, default=1, nullable=False)
+    current_assignee = Column(String, default="Level 1 Field Officer")
+    sla_deadline = Column(DateTime, nullable=True)
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)

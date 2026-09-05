@@ -315,3 +315,6 @@
   color: #ef4444 !important;
   background: rgba(239, 68, 68, 0.15) !important;
 }
+
+.resolution-proof-card { margin-top: 10px; }
+.resolution-proof-image { width: 100%; max-height: 320px; object-fit: cover; display: block; margin-top: 10px; border-radius: 13px; border: 1px solid var(--line); background: #f2f4f7; }
