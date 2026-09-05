@@ -32,6 +32,10 @@ class Complaint(Base):
     estimated_resolution_hours = Column(Integer, nullable=True)
     probable_root_cause = Column(String, nullable=True)
 
+    is_escalated = Column(Integer, default=0, nullable=False)
+    delay_reason = Column(String, nullable=True)
+    close_confirmed_at = Column(DateTime, nullable=True)
+
     # JSON array stored as TEXT so the SQLite demo database remains simple.
     progress_updates = Column(Text, nullable=True, default="[]")
 

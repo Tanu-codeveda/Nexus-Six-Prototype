@@ -585,14 +585,41 @@ function Tracking({ complaint, setComplaint, setModal }) {
     }
   };
 
+  const confirmResolution = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/complaints/${complaint.id}/confirm-close`, { method: 'POST' });
+      if (!response.ok) throw new Error('Failed to confirm resolution');
+      const data = await response.json();
+      setComplaint((current) => ({ ...current, ...data }));
+      setStatusNotice('Resolution confirmed successfully.');
+      setTimeout(() => setStatusNotice(''), 3000);
+    } catch (error) {
+      setStatusNotice(error.message);
+      setTimeout(() => setStatusNotice(''), 3000);
+    }
+  };
+
   const updates = Array.isArray(complaint.progress_updates) ? complaint.progress_updates : [];
   const visibleUpdates = updates.slice().reverse();
   return <div className="page"><Header title="Track Report" back={() => window.history.back()} /><main>
     {statusNotice && <div className="detail-card notification-banner"><b>{statusNotice}</b></div>}
+    {complaint.is_escalated && <div className="detail-card notification-banner" style={{background: '#fff0ed', color: '#c74732', borderColor: '#ffc1b7'}}><b>ESCALATED TO HIGH AUTHORITY</b><p style={{fontSize:'10px', marginTop:'4px'}}>This issue has exceeded SLA estimates and has been elevated.</p></div>}
+    {complaint.delay_reason && <div className="detail-card notification-banner" style={{background: '#fff7e7', color: '#ad7210', borderColor: '#ffe6b3'}}><b>DELAY NOTIFICATION</b><p style={{fontSize:'10px', marginTop:'4px'}}>{complaint.delay_reason}</p></div>}
     <div className="track-head"><div><p className="eyebrow">#{complaint.id?.slice(0, 8).toUpperCase() || 'CP-NEW'}</p><h1>{complaint.description || 'Civic issue report'}</h1><span className="muted">{complaint.ai_category || 'Unclassified'} · {complaint.ai_severity || 'Low'} priority</span></div><Status>{status}</Status></div>
     <div className="detail-card compact"><Info label="Location" value={`${complaint.latitude?.toFixed(4) ?? '—'}, ${complaint.longitude?.toFixed(4) ?? '—'}`} /><Info label="Assigned department" value={complaint.assigned_department || 'Unassigned'} />{complaint.resolved_at && <Info label="Resolved at" value={formatLocalTime(complaint.resolved_at)} />}</div>
     <div className="timeline">{stages.map((stage, index) => <div className={`timeline-item ${index < stageIndex ? 'done ' : ''}${index === stageIndex ? 'current' : ''}`} key={stage}><div className="timeline-dot">{index < stageIndex ? '✓' : index === stageIndex ? '•' : ''}</div><div><b>{stage}</b>{index === stageIndex && <span>{status === 'Resolved' ? 'Issue resolved' : `Current status · ${status}`}</span>}</div></div>)}</div>
     <div className="estimate"><span className="ai-icon mini"><Icon name="clock" size={16} /></span><div><b>{status === 'Resolved' ? 'Resolution complete' : 'Projected service window'}</b><p>{status === 'Resolved' ? 'This complaint has been resolved.' : estimate ? `Estimated resolution: ${estimate} hours.` : severityWindow(complaint.ai_severity)}</p><small>{complaint.prediction_basis || 'Prototype prediction using severity and operational context.'}</small></div></div>
+    
+    {status === 'Resolved' && (
+      <div className="detail-card compact" style={{textAlign: 'center', margin: '15px 0', padding: '15px'}}>
+        {complaint.close_confirmed_at ? (
+          <div><span className="tag success">✓ Confirmed by you</span><p className="muted small-text" style={{marginTop:'8px'}}>Thank you for verifying this issue is resolved.</p></div>
+        ) : (
+          <div><b>Did they fix it?</b><p className="muted small-text" style={{margin:'5px 0 10px'}}>Confirm resolution to close this ticket permanently.</p><Button onClick={confirmResolution}>Confirm Resolution</Button></div>
+        )}
+      </div>
+    )}
+
     <div className="detail-card"><div className="section-head"><h2>Contributing factor</h2>{complaint.root_cause_confidence != null && <span className="tag success">{Math.round(Number(complaint.root_cause_confidence) * 100)}% signal</span>}</div><p>{complaint.probable_root_cause || 'Not available'}</p>{(complaint.root_cause_factors || []).length > 0 && <p className="muted small-text">Signals: {(complaint.root_cause_factors || []).join(' · ')}</p>}{complaint.recommended_action && <div className="explain"><Icon name="spark" size={16} /><span>{complaint.recommended_action}</span></div>}</div>
     <div className="detail-card notification-card"><div className="section-head"><h2>Progress notifications</h2><span className="tag success">Live</span></div>{visibleUpdates.length ? <div className="notification-list">{visibleUpdates.map((item, index) => <div className="notification-item" key={`${item.timestamp}-${index}`}><span className="notification-icon"><Icon name={item.kind === 'admin' || item.kind === 'assignment' ? 'message' : item.kind === 'community' ? 'check' : 'bell'} size={14} /></span><div><b>{item.message}</b><span>{formatLocalTime(item.timestamp)}</span></div></div>)}</div> : <p className="muted">No progress notifications yet.</p>}</div>
     <div className="community"><div className="avatars"><span>{Number(complaint.verification_count || 0)}</span><span>GPS</span><span>✓</span></div><div><b>Community verification</b><p>{complaint.verification_count || 0} confirmation{Number(complaint.verification_count || 0) === 1 ? '' : 's'} · priority {Number(complaint.priority_score || 0)}/100</p></div><button onClick={verify} disabled={alreadyVerified}>{alreadyVerified ? 'Confirmed' : 'Confirm'}</button></div>

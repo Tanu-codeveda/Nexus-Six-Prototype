@@ -49,6 +49,9 @@ def ensure_schema_columns() -> None:
         "estimated_resolution_hours": "INTEGER",
         "probable_root_cause": "TEXT",
         "progress_updates": "TEXT",
+        "is_escalated": "INTEGER DEFAULT 0",
+        "delay_reason": "TEXT",
+        "close_confirmed_at": "DATETIME",
     }
     with engine.begin() as connection:
         for name, sql_type in additions.items():
@@ -352,6 +355,9 @@ def build_complaint_view(complaint: models.Complaint, all_complaints: list[model
         "duplicate_count": len(duplicate_ids),
         "possible_duplicate_ids": duplicate_ids,
         "progress_updates": updates,
+        "is_escalated": getattr(complaint, 'is_escalated', False),
+        "delay_reason": getattr(complaint, 'delay_reason', None),
+        "close_confirmed_at": getattr(complaint, 'close_confirmed_at', None),
     }
 
 
@@ -687,6 +693,12 @@ def update_complaint(
             append_progress(complaint, update_data.progress_message, kind="admin")
             changed = True
 
+        if update_data.delay_reason is not None:
+            if complaint.delay_reason != update_data.delay_reason:
+                complaint.delay_reason = update_data.delay_reason
+                changed = True
+                append_progress(complaint, f"Delay update: {update_data.delay_reason}", kind="admin")
+
         if changed:
             complaint.updated_at = now
 
@@ -740,6 +752,51 @@ def login_user(payload: schemas.UserLogin, db: Session = Depends(get_db)):
     if user.hashed_password != hashed_password:
         raise HTTPException(401, "Invalid email or password")
     return user
+
+@app.post("/api/complaints/escalate-overdue", response_model=list[schemas.ComplaintResponse])
+def escalate_overdue(db: Session = Depends(get_db)):
+    """Evaluate all pending and in-progress tickets for escalation based on estimated_resolution_hours."""
+    complaints = db.query(models.Complaint).filter(
+        models.Complaint.status.in_([schemas.ComplaintStatus.PENDING.value, schemas.ComplaintStatus.ACKNOWLEDGED.value, schemas.ComplaintStatus.IN_PROGRESS.value])
+    ).all()
+    
+    escalated = []
+    now = datetime.utcnow()
+    for complaint in complaints:
+        if complaint.is_escalated:
+            continue
+        if complaint.estimated_resolution_hours:
+            deadline = complaint.created_at + timedelta(hours=complaint.estimated_resolution_hours)
+            if now > deadline:
+                complaint.is_escalated = True
+                append_progress(complaint, "SLA deadline exceeded. Escalated to High Authority.", kind="admin")
+                escalated.append(complaint)
+    
+    if escalated:
+        db.commit()
+    
+    all_complaints = db.query(models.Complaint).all()
+    return [build_complaint_view(c, all_complaints) for c in escalated]
+
+@app.post("/api/complaints/{complaint_id}/confirm-close", response_model=schemas.ComplaintResponse)
+def confirm_close(complaint_id: str, db: Session = Depends(get_db)):
+    """Confirm a resolved issue."""
+    complaints = db.query(models.Complaint).all()
+    complaint = next((item for item in complaints if item.id == complaint_id), None)
+    if not complaint:
+        raise HTTPException(404, "Complaint not found")
+    
+    if complaint.status != schemas.ComplaintStatus.RESOLVED.value:
+        raise HTTPException(400, "Can only confirm closed tickets")
+        
+    if not complaint.close_confirmed_at:
+        complaint.close_confirmed_at = datetime.utcnow()
+        complaint.updated_at = complaint.close_confirmed_at
+        append_progress(complaint, "Resolution confirmed by citizen.", kind="community")
+        db.commit()
+        db.refresh(complaint)
+        
+    return build_complaint_view(complaint, db.query(models.Complaint).all())
 
 # API routes are registered before the static root so /api/* remains reachable.
 app.mount("/", StaticFiles(directory=str(BASE_DIR), html=True), name="static")
