@@ -13,6 +13,7 @@ class Complaint(Base):
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     media_url = Column(String, nullable=True)
+    resolution_media_url = Column(String, nullable=True)
     description = Column(String, nullable=True)
     voice_transcript = Column(String, nullable=True)
     ai_category = Column(String, default="General Maintenance")

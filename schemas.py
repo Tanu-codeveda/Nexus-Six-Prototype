@@ -37,6 +37,7 @@ class ComplaintUpdate(BaseModel):
     assigned_department: Optional[ComplaintDepartment] = None
     progress_message: Optional[str] = Field(default=None, max_length=500)
     delay_reason: Optional[str] = None
+    resolution_media_url: Optional[str] = None
 
 
 class ProgressUpdate(BaseModel):
@@ -52,6 +53,7 @@ class ComplaintResponse(BaseModel):
     latitude: Optional[float]
     longitude: Optional[float]
     media_url: Optional[str]
+    resolution_media_url: Optional[str] = None
     description: Optional[str]
     voice_transcript: Optional[str] = None
     ai_category: str
@@ -84,6 +86,7 @@ class ComplaintResponse(BaseModel):
     duplicate_count: int = 0
     possible_duplicate_ids: list[str] = Field(default_factory=list)
     progress_updates: list[ProgressUpdate] = Field(default_factory=list)
+    is_overdue: bool = False
 
     @field_serializer(
         "created_at",

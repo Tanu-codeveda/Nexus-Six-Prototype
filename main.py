@@ -52,6 +52,7 @@ def ensure_schema_columns() -> None:
         "is_escalated": "INTEGER DEFAULT 0",
         "delay_reason": "TEXT",
         "close_confirmed_at": "DATETIME",
+        "resolution_media_url": "TEXT",
     }
     with engine.begin() as connection:
         for name, sql_type in additions.items():
@@ -355,11 +356,20 @@ def build_complaint_view(complaint: models.Complaint, all_complaints: list[model
         nearby_count,
     )
     updates = _load_progress(complaint.progress_updates)
+    is_overdue = False
+    if (
+        complaint.status != schemas.ComplaintStatus.RESOLVED.value
+        and complaint.created_at
+        and estimated_hours
+    ):
+        deadline = complaint.created_at + timedelta(hours=estimated_hours)
+        is_overdue = datetime.utcnow() > deadline
     return {
         "id": complaint.id,
         "latitude": complaint.latitude,
         "longitude": complaint.longitude,
         "media_url": complaint.media_url,
+        "resolution_media_url": getattr(complaint, "resolution_media_url", None),
         "description": complaint.description,
         "voice_transcript": complaint.voice_transcript,
         "ai_category": complaint.ai_category,
@@ -389,6 +399,7 @@ def build_complaint_view(complaint: models.Complaint, all_complaints: list[model
         "is_escalated": getattr(complaint, 'is_escalated', False),
         "delay_reason": getattr(complaint, 'delay_reason', None),
         "close_confirmed_at": getattr(complaint, 'close_confirmed_at', None),
+        "is_overdue": is_overdue,
     }
 
 
@@ -730,6 +741,18 @@ def update_complaint(
                 complaint.delay_reason = update_data.delay_reason
                 changed = True
                 append_progress(complaint, f"Delay update: {update_data.delay_reason}", kind="admin")
+
+        if update_data.resolution_media_url is not None:
+            evidence_url = update_data.resolution_media_url.strip() or None
+            if evidence_url != getattr(complaint, "resolution_media_url", None):
+                complaint.resolution_media_url = evidence_url
+                changed = True
+                if evidence_url:
+                    append_progress(
+                        complaint,
+                        "Completion evidence photo was added by municipal operations.",
+                        kind="admin",
+                    )
 
         if changed:
             complaint.updated_at = now

@@ -62,6 +62,7 @@ const Icon = ({ name, size = 20 }) => {
     play: <><path fill="currentColor" stroke="none" d="m8 5 11 7-11 7z" /></>,
     info: <><circle {...p} cx="12" cy="12" r="9" /><path {...p} d="M12 10v6M12 7h.01" /></>,
     bell: <><path {...p} d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></>,
+    phone: <><path {...p} d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92Z" /></>,
     edit: <><path {...p} d="M12 20h9" /><path {...p} d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z" /></>,
     refresh: <><path {...p} d="M20 11a8 8 0 0 0-14.8-4L3 10" /><path {...p} d="M3 5v5h5M4 13a8 8 0 0 0 14.8 4L21 14" /><path {...p} d="M21 19v-5h-5" /></>,
     globe: <><circle {...p} cx="12" cy="12" r="9" /><path {...p} d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></>,
@@ -98,6 +99,12 @@ function App() {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('civicpulse.theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    const openHelplines = () => setModal('helplines');
+    window.addEventListener('civicpulse:open-helplines', openHelplines);
+    return () => window.removeEventListener('civicpulse:open-helplines', openHelplines);
+  }, []);
 
   const showToast = (message) => {
     setToast(message);
@@ -391,6 +398,7 @@ function App() {
         {!['login', 'register', 'analysis', 'submitting'].includes(screen) && <BottomNav screen={screen} nav={nav} reset={resetReport} />}
         {toast && <div className="toast">{toast}</div>}
         {modal === 'nearby' && <Modal close={() => setModal(null)} />}
+        {modal === 'helplines' && <HelpModal close={() => setModal(null)} />}
       </div>
     </div>
   );
@@ -400,7 +408,7 @@ const Header = ({ title, back }) => (
   <header className="topbar">
     {back ? <button className="icon-btn" onClick={back}><Icon name="back" /></button> : <div className="brand-mark">CP</div>}
     <div><div className="brand">CivicPulse <span>AI</span></div>{title && <div className="subhead">{title}</div>}</div>
-    {!back && <button className="icon-btn" aria-label="Notifications"><Icon name="bell" /></button>}
+    {!back && <button className="icon-btn" aria-label="Open Jharkhand helplines" title="Jharkhand helplines" onClick={() => window.dispatchEvent(new CustomEvent('civicpulse:open-helplines'))}><Icon name="phone" /></button>}
   </header>
 );
 
@@ -713,6 +721,41 @@ function Profile({ lang, setLang, showToast, nav, theme, setTheme }) {
 }
 const Setting = ({ title, icon, children }) => <div className="setting"><div className="setting-left"><span className="setting-icon"><Icon name={icon} size={17} /></span><b>{title}</b></div>{children}</div>;
 const Toggle = ({ on = false, onChange }) => <button className={`toggle ${on ? 'on' : ''}`} onClick={onChange}><span /></button>;
+function HelpModal({ close }) {
+  const helplines = [
+    { label: 'Emergency Response', number: '112', note: 'Jharkhand emergency response system', emergency: true },
+    { label: 'Police', number: '100', note: 'Police assistance' },
+    { label: 'Fire & Rescue', number: '102', note: 'Fire emergency' },
+    { label: 'Ambulance', number: '108', note: 'Medical emergency' },
+    { label: 'Blood Bank', number: '1910', note: 'Blood bank helpline' },
+    { label: 'Health Helpline', number: '104', note: 'Public health support' },
+    { label: 'Electricity · JBVNL', number: '1912', note: 'Electricity complaints' },
+    { label: 'JBVNL Customer Care', number: '18003456570', note: 'Power utility support' },
+    { label: 'Women Safety', number: '9771432103', note: 'Jharkhand Police Mahila Help Line' },
+    { label: 'Child Help Line', number: '8877444444', note: 'Jharkhand Police child helpline' },
+    { label: 'Cyber Crime', number: '9771432133', note: 'Jharkhand Police cyber crime' },
+    { label: 'Citizen Grievance', number: '181', note: 'State grievance support' },
+  ];
+  return <div className="modal-backdrop" onClick={close}>
+    <div className="modal helpline-modal" onClick={(event) => event.stopPropagation()}>
+      <div className="modal-grab" />
+      <div className="modal-head">
+        <div><p className="eyebrow">JHARKHAND PUBLIC SERVICES</p><h2>Civic helplines</h2></div>
+        <button className="icon-btn" onClick={close} aria-label="Close helplines">×</button>
+      </div>
+      <p className="muted helpline-note">Tap a number to call the relevant authority.</p>
+      <div className="helpline-list">
+        {helplines.map((item) => <a key={item.number + item.label} className={`helpline-item ${item.emergency ? 'emergency' : ''}`} href={`tel:${item.number}`}>
+          <span className="helpline-icon"><Icon name="phone" size={16} /></span>
+          <span className="helpline-copy"><b>{item.label}</b><small>{item.note}</small></span>
+          <strong>{item.number}</strong>
+        </a>)}
+      </div>
+      <Button onClick={close}>Done</Button>
+    </div>
+  </div>;
+}
+
 function Modal({ close }) { return <div className="modal-backdrop" onClick={close}><div className="modal" onClick={(event) => event.stopPropagation()}><div className="modal-grab" /><div className="modal-head"><div><p className="eyebrow">NEARBY INTELLIGENCE</p><h2>Related reports</h2></div><button className="icon-btn" onClick={close}>×</button></div><div className="nearby-item"><div className="mini-map"><Icon name="pin" /></div><div><b>Related report cluster</b><p>Used for hotspot and duplicate analysis</p></div></div><div className="nearby-item"><div className="mini-map"><Icon name="spark" /></div><div><b>Operational priority</b><p>Severity + nearby report density</p></div></div><Button onClick={close}>Done</Button></div></div>; }
 function Login({ nav }) {
   const [email, setEmail] = useState('');

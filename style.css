@@ -197,6 +197,33 @@ button, input, select { font-family: inherit; font-size: inherit; }
 .analytics__card--wide { grid-column: 1 / -1; }
 .analytics__card canvas { max-height: 220px; }
 
+
+/* Live new-report notification. Keeps the message out of document flow and
+   prevents the raw text appearance seen when a complaint arrives. */
+.admin-toast {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 1200;
+  min-width: 260px;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 11px 14px;
+  border: 1px solid var(--line-strong);
+  border-left: 4px solid var(--green);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 10px 30px rgba(23,37,31,.18);
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+.admin-toast.is-visible { opacity: 1; transform: translateY(0); }
+@media (max-width: 700px) { .admin-toast { left: 14px; right: 14px; top: 14px; min-width: 0; max-width: none; } }
+
 /* ---------------- Responsive ---------------- */
 @media (max-width: 1100px) {
   .layout { grid-template-columns: 1fr; grid-template-rows: auto; }
