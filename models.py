@@ -7,6 +7,9 @@ from database import Base
 
 
 class Complaint(Base):
+    user_id = Column(Integer, nullable=True)
+    pseudonymous_id = Column(String, nullable=True)
+
     __tablename__ = "complaints"
 
     escalation_level = Column(Integer, default=1)

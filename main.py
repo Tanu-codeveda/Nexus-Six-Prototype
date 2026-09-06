@@ -1,4 +1,5 @@
 from __future__ import annotations
+import hashlib
 from apscheduler.schedulers.background import BackgroundScheduler
 from database import SessionLocal
 
@@ -115,7 +116,8 @@ def _combine_text(description: str | None, voice_transcript: str | None) -> str:
 
 
 def _severity_rank(value: str) -> int:
-    return {"Low": 0, "Medium": 1, "High": 2, "Critical": 3}.get(value, 0)
+    return {
+        "pseudonymous_id": complaint.pseudonymous_id or "citizen_anon_0000","Low": 0, "Medium": 1, "High": 2, "Critical": 3}.get(value, 0)
 
 
 def _token_set(text_value: str | None) -> set[str]:
@@ -495,7 +497,12 @@ def create_complaint(payload: schemas.ComplaintCreate, db: Session = Depends(get
     sla_hours = {"Critical": 24, "High": 48, "Medium": 72, "Low": 120}.get(result["ai_severity"], 72)
     deadline = now + timedelta(hours=sla_hours)
 
+    raw_identifier = f"guest_{now.timestamp()}"
+    hash_object = hashlib.sha256(raw_identifier.encode())
+    pseudonymous_token = f"citizen_{hash_object.hexdigest()[:8]}"
+
     complaint = models.Complaint(
+        pseudonymous_id=pseudonymous_token,
         latitude=payload.latitude,
         longitude=payload.longitude,
         media_url=payload.media_url,
