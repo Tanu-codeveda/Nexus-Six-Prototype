@@ -10,7 +10,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Iterable
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
@@ -21,6 +21,11 @@ import models
 import schemas
 from ai_helpers import map_category_and_department, process_civic_vision
 from nlp_processor import NLPProcessor
+from database import SessionLocal
+from bin_overflow_predictor import predict_overflow_risk
+from drain_flood_detector import check_drain, load_zones
+from streetlight_monitor import monitor_streetlight
+from pothole_detector import detect_pothole_and_create_complaint
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("civicpulse.api")
@@ -49,6 +54,14 @@ def ensure_schema_columns() -> None:
         "estimated_resolution_hours": "INTEGER",
         "probable_root_cause": "TEXT",
         "progress_updates": "TEXT",
+        "is_escalated": "INTEGER DEFAULT 0",
+        "delay_reason": "TEXT",
+        "close_confirmed_at": "DATETIME",
+        "resolution_media_url": "TEXT",
+        "source": "TEXT DEFAULT 'citizen'",
+        "escalation_level": "INTEGER DEFAULT 1",
+        "current_assignee": "TEXT DEFAULT 'Level 1 Field Officer'",
+        "sla_deadline": "DATETIME",
     }
     with engine.begin() as connection:
         for name, sql_type in additions.items():
@@ -81,6 +94,32 @@ except Exception:
 
 
 SEVERITY_BASE = {"Critical": 90, "High": 72, "Medium": 50, "Low": 28}
+TEXT_CRITICAL_TERMS = (
+    "emergency", "life threatening", "life-threatening", "electrocution",
+    "fire", "collapsed", "collapse", "severe flooding", "major accident",
+)
+TEXT_HIGH_TERMS = (
+    "dangerous", "critical", "severe", "major", "large pothole",
+    "deep pothole", "risk to life", "blocking road", "completely blocked",
+    "overflowing", "not working", "no water for days", "power outage",
+)
+TEXT_MEDIUM_TERMS = (
+    "moderate", "repeated", "frequent", "leaking", "damaged", "broken",
+    "accumulating", "persistent",
+)
+TEXT_LOW_TERMS = ("minor", "small", "slight", "cosmetic")
+
+def infer_text_severity(text_value: str | None) -> str | None:
+    text = (text_value or "").lower()
+    if any(term in text for term in TEXT_CRITICAL_TERMS):
+        return "Critical"
+    if any(term in text for term in TEXT_HIGH_TERMS):
+        return "High"
+    if any(term in text for term in TEXT_MEDIUM_TERMS):
+        return "Medium"
+    if any(term in text for term in TEXT_LOW_TERMS):
+        return "Low"
+    return None
 CATEGORY_BASE_HOURS = {
     "Traffic Issues": 44,
     "Electricity and Power": 52,
@@ -165,8 +204,13 @@ def calculate_priority(complaint: models.Complaint, all_complaints: list[models.
     nearby_open = [other for other in nearby if other.status != schemas.ComplaintStatus.RESOLVED.value]
     duplicates = find_duplicate_candidates(complaint, all_complaints)
 
-    score = SEVERITY_BASE.get(complaint.ai_severity, 28)
-    reasons: list[str] = [f"{complaint.ai_severity or 'Low'} severity"]
+    inferred_severity = infer_text_severity(_combine_text(complaint.description, complaint.voice_transcript))
+    effective_severity = max(
+        (complaint.ai_severity or "Low", inferred_severity or "Low"),
+        key=_severity_rank,
+    )
+    score = SEVERITY_BASE.get(effective_severity, 28)
+    reasons: list[str] = [f"{effective_severity} severity"]
     if nearby_open:
         score += min(15, len(nearby_open) * 3)
         reasons.append(f"{len(nearby_open)} nearby active reports")
@@ -321,11 +365,24 @@ def build_complaint_view(complaint: models.Complaint, all_complaints: list[model
         nearby_count,
     )
     updates = _load_progress(complaint.progress_updates)
+    is_overdue = False
+    if (
+        complaint.status != schemas.ComplaintStatus.RESOLVED.value
+        and complaint.created_at
+        and estimated_hours
+    ):
+        deadline = complaint.created_at + timedelta(hours=estimated_hours)
+        is_overdue = datetime.utcnow() > deadline
     return {
         "id": complaint.id,
         "latitude": complaint.latitude,
         "longitude": complaint.longitude,
         "media_url": complaint.media_url,
+        "resolution_media_url": getattr(complaint, "resolution_media_url", None),
+        "source": getattr(complaint, "source", None) or "citizen",
+        "escalation_level": getattr(complaint, "escalation_level", None) or 1,
+        "current_assignee": getattr(complaint, "current_assignee", None) or "Level 1 Field Officer",
+        "sla_deadline": getattr(complaint, "sla_deadline", None),
         "description": complaint.description,
         "voice_transcript": complaint.voice_transcript,
         "ai_category": complaint.ai_category,
@@ -352,6 +409,10 @@ def build_complaint_view(complaint: models.Complaint, all_complaints: list[model
         "duplicate_count": len(duplicate_ids),
         "possible_duplicate_ids": duplicate_ids,
         "progress_updates": updates,
+        "is_escalated": getattr(complaint, 'is_escalated', False),
+        "delay_reason": getattr(complaint, 'delay_reason', None),
+        "close_confirmed_at": getattr(complaint, 'close_confirmed_at', None),
+        "is_overdue": is_overdue,
     }
 
 
@@ -424,8 +485,9 @@ def analyze_complaint_inputs(
         ai_category, assigned_department = map_category_and_department(detected_issue, combined_text)
         nlp_severity = "Low"
 
+    text_severity = infer_text_severity(combined_text)
     ai_severity = max(
-        (vision_severity or "Low", nlp_severity or "Low"),
+        (vision_severity or "Low", nlp_severity or "Low", text_severity or "Low"),
         key=_severity_rank,
     )
     ai_confidence = max(vision_confidence, nlp_confidence, nlp_severity_confidence)
@@ -553,6 +615,10 @@ def create_complaint(payload: schemas.ComplaintCreate, db: Session = Depends(get
         media_url=payload.media_url,
         description=payload.description,
         voice_transcript=payload.voice_transcript,
+        source="citizen",
+        escalation_level=1,
+        current_assignee=f"Level 1 Field Officer ({result['assigned_department']})",
+        sla_deadline=now + timedelta(hours={"Critical": 24, "High": 48, "Medium": 72, "Low": 120}.get(result["ai_severity"], 72)),
         ai_category=result["ai_category"],
         ai_severity=result["ai_severity"],
         ai_confidence_score=result["ai_confidence_score"],
@@ -590,6 +656,119 @@ def create_complaint(payload: schemas.ComplaintCreate, db: Session = Depends(get
 def get_all_complaints(db: Session = Depends(get_db)):
     complaints = db.query(models.Complaint).order_by(models.Complaint.created_at.desc()).all()
     return [build_complaint_view(complaint, complaints) for complaint in complaints]
+
+
+@app.get("/api/escalation-matrix")
+def get_escalation_matrix(db: Session = Depends(get_db)):
+    complaints = db.query(models.Complaint).all()
+    matrix = {}
+    for item in complaints:
+        dept = item.assigned_department or "Unassigned"
+        level = f"Level {getattr(item, "escalation_level", 1) or 1}"
+        bucket = matrix.setdefault(dept, {"Level 1": 0, "Level 2": 0, "Level 3": 0, "tickets": []})
+        if level not in bucket:
+            level = "Level 1"
+        bucket[level] += 1
+        bucket["tickets"].append({
+            "id": item.id,
+            "category": item.ai_category,
+            "level": level,
+            "assignee": getattr(item, "current_assignee", None) or "Level 1 Field Officer",
+            "status": item.status,
+            "deadline": getattr(item, "sla_deadline", None),
+        })
+    return matrix
+
+
+@app.post("/api/iot/run-bin-check", response_model=list[schemas.ComplaintResponse])
+def run_bin_iot_check(db: Session = Depends(get_db)):
+    try:
+        before_ids = {item.id for item in db.query(models.Complaint).all()}
+        predict_overflow_risk(db)
+        complaints = db.query(models.Complaint).order_by(models.Complaint.created_at.desc()).all()
+        created = [
+            item for item in complaints
+            if item.id not in before_ids and getattr(item, "source", None) == "iot_predicted"
+        ]
+        return [build_complaint_view(item, complaints) for item in created]
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Bin IoT check failed")
+        raise HTTPException(500, "Bin overflow IoT check failed") from exc
+
+
+def _save_upload_temp(upload, suffix: str) -> str:
+    data = upload.file.read()
+    if not data:
+        raise HTTPException(400, "Uploaded image is empty")
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Uploaded image exceeds the 10 MB limit")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
+        handle.write(data)
+        return handle.name
+
+
+@app.post("/api/iot/run-pothole-check")
+def run_pothole_iot_check(
+    file: UploadFile = File(...),
+    latitude: float | None = None,
+    longitude: float | None = None,
+    db: Session = Depends(get_db),
+):
+    path = _save_upload_temp(file, ".jpg")
+    try:
+        return detect_pothole_and_create_complaint(
+            db,
+            image_path=path,
+            latitude=latitude,
+            longitude=longitude,
+            media_url=f"iot://pothole/{file.filename or 'image'}",
+        )
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+@app.post("/api/iot/run-streetlight-check")
+def run_streetlight_iot_check(
+    file: UploadFile = File(...),
+    zone_id: str = "default",
+    demo_override: bool = False,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    db: Session = Depends(get_db),
+):
+    path = _save_upload_temp(file, ".jpg")
+    try:
+        return monitor_streetlight(
+            db,
+            zone_id=zone_id,
+            image_path=path,
+            demo_override=demo_override,
+            latitude=latitude,
+            longitude=longitude,
+        )
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+@app.post("/api/iot/run-drain-check")
+def run_drain_iot_check(
+    zone_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    zones = load_zones()
+    if zone_id not in zones:
+        raise HTTPException(400, f"Drain zone '{zone_id}' is not configured")
+    path = _save_upload_temp(file, ".jpg")
+    try:
+        import cv2
+        frame = cv2.imread(path)
+        if frame is None:
+            raise HTTPException(400, "Could not read uploaded image")
+        return check_drain(db, zone=zones[zone_id], frame=frame)
+    finally:
+        Path(path).unlink(missing_ok=True)
 
 
 @app.get("/api/complaints/{complaint_id}", response_model=schemas.ComplaintResponse)
@@ -687,6 +866,24 @@ def update_complaint(
             append_progress(complaint, update_data.progress_message, kind="admin")
             changed = True
 
+        if update_data.delay_reason is not None:
+            if complaint.delay_reason != update_data.delay_reason:
+                complaint.delay_reason = update_data.delay_reason
+                changed = True
+                append_progress(complaint, f"Delay update: {update_data.delay_reason}", kind="admin")
+
+        if update_data.resolution_media_url is not None:
+            evidence_url = update_data.resolution_media_url.strip() or None
+            if evidence_url != getattr(complaint, "resolution_media_url", None):
+                complaint.resolution_media_url = evidence_url
+                changed = True
+                if evidence_url:
+                    append_progress(
+                        complaint,
+                        "Completion evidence photo was added by municipal operations.",
+                        kind="admin",
+                    )
+
         if changed:
             complaint.updated_at = now
 
@@ -709,6 +906,133 @@ def update_complaint(
         logger.exception("Complaint update failed for %s", complaint_id)
         raise HTTPException(500, f"Could not update complaint: {exc}") from exc
 
+
+import hashlib
+
+@app.post("/api/register", response_model=schemas.UserResponse, status_code=201)
+def register_user(payload: schemas.UserCreate, db: Session = Depends(get_db)):
+    existing = db.query(models.User).filter(models.User.email == payload.email).first()
+    if existing:
+        raise HTTPException(400, "Email already registered")
+    
+    hashed_password = hashlib.sha256(payload.password.encode()).hexdigest()
+    user = models.User(
+        name=payload.name,
+        email=payload.email,
+        hashed_password=hashed_password,
+        created_at=datetime.utcnow()
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+@app.post("/api/login", response_model=schemas.UserResponse)
+def login_user(payload: schemas.UserLogin, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == payload.email).first()
+    if not user:
+        raise HTTPException(401, "Invalid email or password")
+    
+    hashed_password = hashlib.sha256(payload.password.encode()).hexdigest()
+    if user.hashed_password != hashed_password:
+        raise HTTPException(401, "Invalid email or password")
+    return user
+
+@app.post("/api/complaints/escalate-overdue", response_model=list[schemas.ComplaintResponse])
+def escalate_overdue(db: Session = Depends(get_db)):
+    """Evaluate all pending and in-progress tickets for escalation based on estimated_resolution_hours."""
+    complaints = db.query(models.Complaint).filter(
+        models.Complaint.status.in_([schemas.ComplaintStatus.PENDING.value, schemas.ComplaintStatus.ACKNOWLEDGED.value, schemas.ComplaintStatus.IN_PROGRESS.value])
+    ).all()
+    
+    escalated = []
+    now = datetime.utcnow()
+    for complaint in complaints:
+        if complaint.is_escalated:
+            continue
+        if complaint.estimated_resolution_hours:
+            deadline = complaint.created_at + timedelta(hours=complaint.estimated_resolution_hours)
+            if now > deadline:
+                complaint.is_escalated = True
+                append_progress(complaint, "SLA deadline exceeded. Escalated to High Authority.", kind="admin")
+                escalated.append(complaint)
+    
+    if escalated:
+        db.commit()
+    
+    all_complaints = db.query(models.Complaint).all()
+    return [build_complaint_view(c, all_complaints) for c in escalated]
+
+@app.post("/api/complaints/{complaint_id}/confirm-close", response_model=schemas.ComplaintResponse)
+def confirm_close(complaint_id: str, db: Session = Depends(get_db)):
+    """Confirm a resolved issue."""
+    complaints = db.query(models.Complaint).all()
+    complaint = next((item for item in complaints if item.id == complaint_id), None)
+    if not complaint:
+        raise HTTPException(404, "Complaint not found")
+    
+    if complaint.status != schemas.ComplaintStatus.RESOLVED.value:
+        raise HTTPException(400, "Can only confirm closed tickets")
+        
+    if not complaint.close_confirmed_at:
+        complaint.close_confirmed_at = datetime.utcnow()
+        complaint.updated_at = complaint.close_confirmed_at
+        append_progress(complaint, "Resolution confirmed by citizen.", kind="community")
+        db.commit()
+        db.refresh(complaint)
+        
+    return build_complaint_view(complaint, db.query(models.Complaint).all())
+
+def process_automatic_escalations():
+    db = SessionLocal()
+    try:
+        now = datetime.utcnow()
+        overdue = db.query(models.Complaint).filter(
+            models.Complaint.status != schemas.ComplaintStatus.RESOLVED.value,
+            models.Complaint.sla_deadline.isnot(None),
+            models.Complaint.sla_deadline < now,
+        ).all()
+        for complaint in overdue:
+            level = int(getattr(complaint, "escalation_level", 1) or 1)
+            if level == 1:
+                complaint.escalation_level = 2
+                complaint.current_assignee = f"Level 2 Zonal Head / Executive Engineer ({complaint.assigned_department})"
+                complaint.sla_deadline = now + timedelta(hours=48)
+                append_progress(complaint, "SLA breached: Automatically escalated to Level 2 higher authority due to non-resolution.", kind="escalation")
+            elif level == 2:
+                complaint.escalation_level = 3
+                complaint.current_assignee = f"Level 3 Municipal Commissioner / Apex Board ({complaint.assigned_department})"
+                complaint.sla_deadline = None
+                append_progress(complaint, "SLA breached: Automatically escalated to Level 3 Apex Authority.", kind="escalation")
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Automatic escalation job failed")
+    finally:
+        db.close()
+
+
+def scheduled_iot_job():
+    db = SessionLocal()
+    try:
+        logger.info("Running automated IoT bin health check")
+        predict_overflow_risk(db)
+    except Exception:
+        db.rollback()
+        logger.exception("Automated IoT background check failed")
+    finally:
+        db.close()
+
+
+if os.getenv("CIVICPULSE_ENABLE_BACKGROUND_JOBS", "1") == "1":
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(scheduled_iot_job, "interval", hours=6, id="iot-bin-check", replace_existing=True)
+        scheduler.add_job(process_automatic_escalations, "interval", hours=1, id="sla-escalation-check", replace_existing=True)
+        scheduler.start()
+    except Exception:
+        logger.exception("Background scheduler could not start; API routes remain available.")
 
 # API routes are registered before the static root so /api/* remains reachable.
 app.mount("/", StaticFiles(directory=str(BASE_DIR), html=True), name="static")

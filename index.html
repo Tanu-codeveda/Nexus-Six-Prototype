@@ -30,6 +30,8 @@
     <span class="ticker__divider"></span>
     <span class="ticker__item"><strong id="tickerHotspots">–</strong> hotspots</span>
     <span class="ticker__divider"></span>
+    <span class="ticker__item ticker__item--delay"><strong id="tickerDelayed">–</strong> delayed</span>
+    <span class="ticker__divider"></span>
     <span class="ticker__item">updated <strong id="tickerTime">–</strong></span>
   </div>
 
@@ -120,6 +122,12 @@
 
       <img id="detailMedia" class="detail__media" alt="Submitted photo" hidden />
 
+      <div class="detail__field resolution-evidence-field">
+        <label for="detailResolutionEvidence">Completion evidence photo <span>(optional — add when the work is finished)</span></label>
+        <input id="detailResolutionEvidence" type="file" accept="image/*" />
+        <img id="detailResolutionEvidencePreview" class="detail__media detail__evidence-preview" alt="Completion evidence preview" hidden />
+      </div>
+
       <div class="detail__field">
         <label for="detailStatusSelect">Status</label>
         <select id="detailStatusSelect">
@@ -135,7 +143,7 @@
         <select id="detailDeptSelect"></select>
       </div>
 
-      <div id="detailPriority" class="detail__insight" hidden></div><div id="detailDuplicates" class="detail__duplicates" hidden></div><div class="detail__progress"><div class="detail__progress-head"><strong>Citizen progress feed</strong><span>Visible in tracking</span></div><div id="detailProgressTimeline" class="progress-timeline"></div><label for="detailProgressMessage">Add progress update</label><textarea id="detailProgressMessage" maxlength="500" rows="3" placeholder="e.g. Crew scheduled to inspect the site tomorrow morning."></textarea></div><button class="btn btn--primary btn--block" id="detailSave">Save changes</button>
+      <div id="detailPriority" class="detail__insight" hidden></div><div id="detailDelay" class="detail__delay" hidden></div><div id="detailDuplicates" class="detail__duplicates" hidden></div><div class="detail__progress"><div class="detail__progress-head"><strong>Citizen progress feed</strong><span>Visible in tracking</span></div><div id="detailProgressTimeline" class="progress-timeline"></div><label for="detailProgressMessage">Add progress update</label><textarea id="detailProgressMessage" maxlength="500" rows="3" placeholder="e.g. Crew scheduled to inspect the site tomorrow morning."></textarea></div><button class="btn btn--primary btn--block" id="detailSave">Save changes</button>
       <p class="detail__status-msg" id="detailSaveMsg" role="status"></p>
     </div>
   </aside>

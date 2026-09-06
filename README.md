@@ -63,6 +63,16 @@ The operations dashboard shows the same data on a live map with a density heatma
 - Predicted resolution-time metric
 - CSV export
 
+
+### IoT / Infrastructure Intelligence
+
+- Predictive waste-bin overflow monitoring using synthetic historical telemetry and XGBoost
+- OpenCV-based streetlight illumination monitoring with night-hours guard
+- Drain/flood detection from configured camera zones with optional OpenWeather rainfall context
+- Dedicated pothole detection path using the existing VisionAnalyzer
+- IoT-generated complaints are stored in the same Complaint model and appear in the normal admin queue
+- Background bin health checks and SLA escalation jobs are configurable with `CIVICPULSE_ENABLE_BACKGROUND_JOBS=0|1`
+
 ## AI / decision-support pipeline
 
 ```text

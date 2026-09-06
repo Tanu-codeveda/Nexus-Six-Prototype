@@ -62,6 +62,7 @@ const Icon = ({ name, size = 20 }) => {
     play: <><path fill="currentColor" stroke="none" d="m8 5 11 7-11 7z" /></>,
     info: <><circle {...p} cx="12" cy="12" r="9" /><path {...p} d="M12 10v6M12 7h.01" /></>,
     bell: <><path {...p} d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></>,
+    phone: <><path {...p} d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92Z" /></>,
     edit: <><path {...p} d="M12 20h9" /><path {...p} d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z" /></>,
     refresh: <><path {...p} d="M20 11a8 8 0 0 0-14.8-4L3 10" /><path {...p} d="M3 5v5h5M4 13a8 8 0 0 0 14.8 4L21 14" /><path {...p} d="M21 19v-5h-5" /></>,
     globe: <><circle {...p} cx="12" cy="12" r="9" /><path {...p} d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></>,
@@ -72,7 +73,7 @@ const Icon = ({ name, size = 20 }) => {
 };
 
 function App() {
-  const [screen, setScreen] = useState('home');
+  const [screen, setScreen] = useState('login');
   const [complaint, setComplaint] = useState({ ...EMPTY_COMPLAINT });
   const [writtenDescription, setWrittenDescription] = useState('');
   const [voiceTranscript, setVoiceTranscript] = useState('');
@@ -87,10 +88,23 @@ function App() {
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState('');
   const [lang, setLang] = useState('English');
+  const [theme, setTheme] = useState(localStorage.getItem('civicpulse.theme') || 'light');
+  const [reportResetKey, setReportResetKey] = useState(0);
   const recorder = useRef(null);
   const timer = useRef(null);
   const recordingStartedAt = useRef(0);
   const toastTimer = useRef(null);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('civicpulse.theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    const openHelplines = () => setModal('helplines');
+    window.addEventListener('civicpulse:open-helplines', openHelplines);
+    return () => window.removeEventListener('civicpulse:open-helplines', openHelplines);
+  }, []);
 
   const showToast = (message) => {
     setToast(message);
@@ -327,6 +341,7 @@ function App() {
     setSeconds(0);
     setAiError('');
     setAiProgress(0);
+    setReportResetKey((key) => key + 1);
     setScreen('report');
   };
 
@@ -339,9 +354,11 @@ function App() {
   return (
     <div className="app-shell">
       <div className="app-frame">
+        {screen === 'login' && <Login nav={nav} />}
+        {screen === 'register' && <Register nav={nav} />}
         {screen === 'home' && <Home nav={nav} />}
         {screen === 'report' && (
-          <Report
+          <Report key={reportResetKey}
             canContinue={hasReportContent(writtenDescription, photo, voiceDataUrl)}
             complaint={complaint}
             setComplaint={setComplaint}
@@ -377,10 +394,11 @@ function App() {
         {screen === 'success' && <Success complaint={complaint} track={() => nav('tracking')} home={() => nav('home')} />}
         {screen === 'tracking' && <Tracking complaint={complaint} setComplaint={setComplaint} setModal={setModal} />}
         {screen === 'reports' && <MyReports openTracking={openTracking} />}
-        {screen === 'profile' && <Profile lang={lang} setLang={setLang} showToast={showToast} />}
-        {!['analysis', 'submitting'].includes(screen) && <BottomNav screen={screen} nav={nav} reset={resetReport} />}
+        {screen === 'profile' && <Profile lang={lang} setLang={setLang} showToast={showToast} nav={nav} theme={theme} setTheme={setTheme} />}
+        {!['login', 'register', 'analysis', 'submitting'].includes(screen) && <BottomNav screen={screen} nav={nav} reset={resetReport} />}
         {toast && <div className="toast">{toast}</div>}
         {modal === 'nearby' && <Modal close={() => setModal(null)} />}
+        {modal === 'helplines' && <HelpModal close={() => setModal(null)} />}
       </div>
     </div>
   );
@@ -390,7 +408,7 @@ const Header = ({ title, back }) => (
   <header className="topbar">
     {back ? <button className="icon-btn" onClick={back}><Icon name="back" /></button> : <div className="brand-mark">CP</div>}
     <div><div className="brand">CivicPulse <span>AI</span></div>{title && <div className="subhead">{title}</div>}</div>
-    {!back && <button className="icon-btn" aria-label="Notifications"><Icon name="bell" /></button>}
+    {!back && <button className="icon-btn" aria-label="Open Jharkhand helplines" title="Jharkhand helplines" onClick={() => window.dispatchEvent(new CustomEvent('civicpulse:open-helplines'))}><Icon name="phone" /></button>}
   </header>
 );
 
@@ -585,6 +603,13 @@ function Tracking({ complaint, setComplaint, setModal }) {
     <div className="detail-card compact"><Info label="Location" value={`${complaint.latitude?.toFixed(4) ?? '—'}, ${complaint.longitude?.toFixed(4) ?? '—'}`} /><Info label="Assigned department" value={complaint.assigned_department || 'Unassigned'} />{complaint.resolved_at && <Info label="Resolved at" value={formatLocalTime(complaint.resolved_at)} />}</div>
     <div className="timeline">{stages.map((stage, index) => <div className={`timeline-item ${index < stageIndex ? 'done ' : ''}${index === stageIndex ? 'current' : ''}`} key={stage}><div className="timeline-dot">{index < stageIndex ? '✓' : index === stageIndex ? '•' : ''}</div><div><b>{stage}</b>{index === stageIndex && <span>{status === 'Resolved' ? 'Issue resolved' : `Current status · ${status}`}</span>}</div></div>)}</div>
     <div className="estimate"><span className="ai-icon mini"><Icon name="clock" size={16} /></span><div><b>{status === 'Resolved' ? 'Resolution complete' : 'Projected service window'}</b><p>{status === 'Resolved' ? 'This complaint has been resolved.' : estimate ? `Estimated resolution: ${estimate} hours.` : severityWindow(complaint.ai_severity)}</p><small>{complaint.prediction_basis || 'Prototype prediction using severity and operational context.'}</small></div></div>
+    {status === 'Resolved' && complaint.resolution_media_url && (
+      <div className="detail-card resolution-proof-card">
+        <div className="section-head"><h2>Completion evidence</h2><span className="tag success">Verified by Operations</span></div>
+        <p className="muted small-text">A photo was uploaded by municipal operations to document the completed work.</p>
+        <img className="resolution-proof-image" src={complaint.resolution_media_url} alt="Photo showing the completed civic issue resolution" loading="lazy" />
+      </div>
+    )}
     <div className="detail-card"><div className="section-head"><h2>Contributing factor</h2>{complaint.root_cause_confidence != null && <span className="tag success">{Math.round(Number(complaint.root_cause_confidence) * 100)}% signal</span>}</div><p>{complaint.probable_root_cause || 'Not available'}</p>{(complaint.root_cause_factors || []).length > 0 && <p className="muted small-text">Signals: {(complaint.root_cause_factors || []).join(' · ')}</p>}{complaint.recommended_action && <div className="explain"><Icon name="spark" size={16} /><span>{complaint.recommended_action}</span></div>}</div>
     <div className="detail-card notification-card"><div className="section-head"><h2>Progress notifications</h2><span className="tag success">Live</span></div>{visibleUpdates.length ? <div className="notification-list">{visibleUpdates.map((item, index) => <div className="notification-item" key={`${item.timestamp}-${index}`}><span className="notification-icon"><Icon name={item.kind === 'admin' || item.kind === 'assignment' ? 'message' : item.kind === 'community' ? 'check' : 'bell'} size={14} /></span><div><b>{item.message}</b><span>{formatLocalTime(item.timestamp)}</span></div></div>)}</div> : <p className="muted">No progress notifications yet.</p>}</div>
     <div className="community"><div className="avatars"><span>{Number(complaint.verification_count || 0)}</span><span>GPS</span><span>✓</span></div><div><b>Community verification</b><p>{complaint.verification_count || 0} confirmation{Number(complaint.verification_count || 0) === 1 ? '' : 's'} · priority {Number(complaint.priority_score || 0)}/100</p></div><button onClick={verify} disabled={alreadyVerified}>{alreadyVerified ? 'Confirmed' : 'Confirm'}</button></div>
@@ -607,7 +632,21 @@ function MyReports({ openTracking }) {
     try {
       const ids = readStoredReportIds();
       if (!ids.length) { setItems([]); return; }
-      const results = await Promise.all(ids.map(async (id) => { try { const response = await fetch(`${API_BASE}/api/complaints/${id}`); return response.ok ? response.json() : null; } catch { return null; } }));
+      const staleIds = [];
+      const results = await Promise.all(ids.map(async (id) => {
+        try {
+          const response = await fetch(`${API_BASE}/api/complaints/${id}`);
+          if (response.ok) return response.json();
+          if (response.status === 404) staleIds.push(id);
+          return null;
+        } catch {
+          return null;
+        }
+      }));
+      if (staleIds.length) {
+        const remainingIds = readStoredReportIds().filter((id) => !staleIds.includes(id));
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(remainingIds)); } catch {}
+      }
       setItems(results.filter(Boolean));
     } catch (error) { setError(error.message || 'Could not load your reports.'); }
     finally { setLoading(false); }
@@ -619,8 +658,266 @@ function MyReports({ openTracking }) {
   return <div className="page"><Header title="My Reports" /><main><div className="screen-title"><p className="eyebrow">YOUR ACTIVITY</p><h1>Reports</h1><p className="muted">Keep track of every issue you’ve raised.</p></div><div className="filter-row"><button className={filter === 'All' ? 'selected' : ''} onClick={() => setFilter('All')}>All <span>{items.length}</span></button><button className={filter === 'Pending' ? 'selected' : ''} onClick={() => setFilter('Pending')}>Pending <span>{pendingCount}</span></button><button className={filter === 'Resolved' ? 'selected' : ''} onClick={() => setFilter('Resolved')}>Resolved <span>{resolvedCount}</span></button></div>{loading ? <div className="detail-card"><p className="muted">Loading your reports…</p></div> : error ? <div className="detail-card"><p>{error}</p><button className="text-btn" onClick={load}>Try again</button></div> : filtered.length === 0 ? <div className="detail-card"><h2>No reports yet</h2><p className="muted">Submit a civic issue and it will appear here automatically.</p></div> : <div className="reports-list">{filtered.map((report) => <button className="report-card" key={report.id} onClick={() => openTracking(report)}><div className="report-card-top"><span className="report-number">#{report.id.slice(0, 8).toUpperCase()}</span><Status>{report.status || 'Pending'}</Status></div><h3>{report.description || report.voice_transcript || 'Civic issue report'}</h3><p>{report.ai_category || 'Unclassified'} · {report.assigned_department || 'Unassigned'}</p><div className="report-card-foot"><span>{typeof report.latitude === 'number' ? report.latitude.toFixed(4) : '—'}, {typeof report.longitude === 'number' ? report.longitude.toFixed(4) : '—'}</span><Icon name="arrow" size={16} /></div></button>)}</div>}<button className="text-btn" onClick={load}>Refresh reports</button></main></div>;
 }
 
-function Profile({ lang, setLang, showToast }) { return <div className="page"><Header title="Profile" /><main><div className="profile-head"><div className="avatar">DC</div><div><h1>Demo Citizen</h1><p className="muted">CivicPulse member</p></div></div><Setting title="Notifications" icon="bell"><Toggle on={true} onChange={() => showToast('Notifications are enabled for this demo')} /></Setting><Setting title="Location permission" icon="pin"><span className="setting-value">Browser controlled</span></Setting><Setting title="Language" icon="globe"><div className="lang-toggle"><button className={lang === 'English' ? 'selected' : ''} onClick={() => setLang('English')}>English</button><button className={lang === 'Hindi' ? 'selected' : ''} onClick={() => setLang('Hindi')}>हिन्दी</button></div></Setting><div className="setting-section"><h3>Accessibility</h3><Setting title="Large text" icon="info"><Toggle /></Setting><Setting title="High contrast" icon="spark"><Toggle /></Setting><Setting title="Voice-first reporting" icon="mic"><Toggle on /></Setting></div><div className="setting-section"><h3>Privacy</h3><p className="muted small-text">Data access and processing follow applicable consent, privacy and data-governance requirements.</p></div></main></div>; }
+function Profile({ lang, setLang, showToast, nav, theme, setTheme }) {
+  const [user, setUser] = useState(null);
+  
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('civicpulse.user');
+      if (stored) setUser(JSON.parse(stored));
+    } catch (e) {}
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('civicpulse.user');
+    nav('login');
+  };
+
+  const name = user?.name || 'Demo Citizen';
+  const email = user?.email || 'CivicPulse member';
+  const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'DC';
+
+  return (
+    <div className="page">
+      <Header title="Profile" />
+      <main>
+        <div className="profile-head">
+          <div className="avatar">{initials}</div>
+          <div>
+            <h1>{name}</h1>
+            <p className="muted">{email}</p>
+          </div>
+        </div>
+        
+        <div className="setting-section" style={{ marginTop: '0' }}>
+          <h3>Preferences</h3>
+          <Setting title="Theme" icon="sun">
+            <div className="lang-toggle">
+              <button className={theme === 'light' ? 'selected' : ''} onClick={() => setTheme('light')}>Light</button>
+              <button className={theme === 'dark' ? 'selected' : ''} onClick={() => setTheme('dark')}>Dark</button>
+            </div>
+          </Setting>
+          <Setting title="Language" icon="globe">
+            <div className="lang-toggle">
+              <button className={lang === 'English' ? 'selected' : ''} onClick={() => setLang('English')}>EN</button>
+              <button className={lang === 'Hindi' ? 'selected' : ''} onClick={() => setLang('Hindi')}>HI</button>
+            </div>
+          </Setting>
+          <Setting title="Notifications" icon="bell"><Toggle on={true} onChange={() => showToast('Notifications are enabled for this demo')} /></Setting>
+          <Setting title="Location permission" icon="pin"><span className="setting-value">Browser controlled</span></Setting>
+        </div>
+
+        <div className="setting-section">
+          <h3>Accessibility</h3>
+          <Setting title="Large text" icon="info"><Toggle /></Setting>
+          <Setting title="High contrast" icon="spark"><Toggle /></Setting>
+          <Setting title="Voice-first reporting" icon="mic"><Toggle on /></Setting>
+        </div>
+
+        <div className="setting-section">
+          <h3>Privacy</h3>
+          <p className="muted small-text">Data access and processing follow applicable consent, privacy and data-governance requirements.</p>
+        </div>
+
+        <div style={{ marginTop: '2rem', textAlign: 'center' }}>
+          <button className="text-btn" style={{ color: '#e53e3e' }} onClick={handleLogout}>Sign Out</button>
+        </div>
+      </main>
+    </div>
+  );
+}
 const Setting = ({ title, icon, children }) => <div className="setting"><div className="setting-left"><span className="setting-icon"><Icon name={icon} size={17} /></span><b>{title}</b></div>{children}</div>;
 const Toggle = ({ on = false, onChange }) => <button className={`toggle ${on ? 'on' : ''}`} onClick={onChange}><span /></button>;
+function HelpModal({ close }) {
+  const helplines = [
+    { label: 'Emergency Response', number: '112', note: 'Jharkhand emergency response system', emergency: true },
+    { label: 'Police', number: '100', note: 'Police assistance' },
+    { label: 'Fire & Rescue', number: '102', note: 'Fire emergency' },
+    { label: 'Ambulance', number: '108', note: 'Medical emergency' },
+    { label: 'Blood Bank', number: '1910', note: 'Blood bank helpline' },
+    { label: 'Health Helpline', number: '104', note: 'Public health support' },
+    { label: 'Electricity · JBVNL', number: '1912', note: 'Electricity complaints' },
+    { label: 'JBVNL Customer Care', number: '18003456570', note: 'Power utility support' },
+    { label: 'Women Safety', number: '9771432103', note: 'Jharkhand Police Mahila Help Line' },
+    { label: 'Child Help Line', number: '8877444444', note: 'Jharkhand Police child helpline' },
+    { label: 'Cyber Crime', number: '9771432133', note: 'Jharkhand Police cyber crime' },
+    { label: 'Citizen Grievance', number: '181', note: 'State grievance support' },
+  ];
+  return <div className="modal-backdrop" onClick={close}>
+    <div className="modal helpline-modal" onClick={(event) => event.stopPropagation()}>
+      <div className="modal-grab" />
+      <div className="modal-head">
+        <div><p className="eyebrow">JHARKHAND PUBLIC SERVICES</p><h2>Civic helplines</h2></div>
+        <button className="icon-btn" onClick={close} aria-label="Close helplines">×</button>
+      </div>
+      <p className="muted helpline-note">Tap a number to call the relevant authority.</p>
+      <div className="helpline-list">
+        {helplines.map((item) => <a key={item.number + item.label} className={`helpline-item ${item.emergency ? 'emergency' : ''}`} href={`tel:${item.number}`}>
+          <span className="helpline-icon"><Icon name="phone" size={16} /></span>
+          <span className="helpline-copy"><b>{item.label}</b><small>{item.note}</small></span>
+          <strong>{item.number}</strong>
+        </a>)}
+      </div>
+      <Button onClick={close}>Done</Button>
+    </div>
+  </div>;
+}
+
 function Modal({ close }) { return <div className="modal-backdrop" onClick={close}><div className="modal" onClick={(event) => event.stopPropagation()}><div className="modal-grab" /><div className="modal-head"><div><p className="eyebrow">NEARBY INTELLIGENCE</p><h2>Related reports</h2></div><button className="icon-btn" onClick={close}>×</button></div><div className="nearby-item"><div className="mini-map"><Icon name="pin" /></div><div><b>Related report cluster</b><p>Used for hotspot and duplicate analysis</p></div></div><div className="nearby-item"><div className="mini-map"><Icon name="spark" /></div><div><b>Operational priority</b><p>Severity + nearby report density</p></div></div><Button onClick={close}>Done</Button></div></div>; }
+function Login({ nav }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || 'Login failed');
+      }
+      localStorage.setItem('civicpulse.user', JSON.stringify(data));
+      nav('home');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="page center-page">
+      <div className="brand-mark" style={{ marginBottom: '1rem', width: 48, height: 48, fontSize: 20 }}>CP</div>
+      <div className="brand" style={{ marginBottom: '2rem' }}>CivicPulse <span>AI</span></div>
+      
+      <form onSubmit={handleLogin} style={{ width: '100%', maxWidth: 320, textAlign: 'left' }}>
+        {error && <div style={{ color: 'red', marginBottom: '1rem', fontSize: '14px' }}>{error}</div>}
+        <div style={{ marginBottom: '1rem' }}>
+          <label className="field-label">Email</label>
+          <input 
+            type="email" 
+            className="textarea" 
+            style={{ minHeight: 'auto', padding: '12px' }} 
+            placeholder="citizen@example.com" 
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+          />
+        </div>
+        <div style={{ marginBottom: '1.5rem' }}>
+          <label className="field-label">Password</label>
+          <input 
+            type="password" 
+            className="textarea" 
+            style={{ minHeight: 'auto', padding: '12px' }} 
+            placeholder="••••••••" 
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+          />
+        </div>
+        <Button type="submit" disabled={!email || !password || loading}>
+          {loading ? 'Signing In...' : 'Sign In'}
+        </Button>
+      </form>
+      
+      <p style={{ marginTop: '2rem' }} className="muted">
+        Don't have an account? <button type="button" className="text-btn" onClick={() => nav('register')} style={{ display: 'inline', padding: 0 }}>Register</button>
+      </p>
+    </div>
+  );
+}
+
+function Register({ nav }) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || 'Registration failed');
+      }
+      nav('login');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="page center-page">
+      <div className="brand-mark" style={{ marginBottom: '1rem', width: 48, height: 48, fontSize: 20 }}>CP</div>
+      <div className="brand" style={{ marginBottom: '2rem' }}>CivicPulse <span>AI</span></div>
+      
+      <form onSubmit={handleRegister} style={{ width: '100%', maxWidth: 320, textAlign: 'left' }}>
+        {error && <div style={{ color: 'red', marginBottom: '1rem', fontSize: '14px' }}>{error}</div>}
+        <div style={{ marginBottom: '1rem' }}>
+          <label className="field-label">Full Name</label>
+          <input 
+            type="text" 
+            className="textarea" 
+            style={{ minHeight: 'auto', padding: '12px' }} 
+            placeholder="Demo Citizen" 
+            value={name}
+            onChange={e => setName(e.target.value)}
+            required
+          />
+        </div>
+        <div style={{ marginBottom: '1rem' }}>
+          <label className="field-label">Email</label>
+          <input 
+            type="email" 
+            className="textarea" 
+            style={{ minHeight: 'auto', padding: '12px' }} 
+            placeholder="citizen@example.com" 
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+          />
+        </div>
+        <div style={{ marginBottom: '1.5rem' }}>
+          <label className="field-label">Password</label>
+          <input 
+            type="password" 
+            className="textarea" 
+            style={{ minHeight: 'auto', padding: '12px' }} 
+            placeholder="••••••••" 
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+          />
+        </div>
+        <Button type="submit" disabled={!name || !email || !password || loading}>
+          {loading ? 'Creating Account...' : 'Create Account'}
+        </Button>
+      </form>
+      
+      <p style={{ marginTop: '2rem' }} className="muted">
+        Already have an account? <button type="button" className="text-btn" onClick={() => nav('login')} style={{ display: 'inline', padding: 0 }}>Sign In</button>
+      </p>
+    </div>
+  );
+}
+
 export default App;

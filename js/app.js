@@ -12,6 +12,7 @@
   let filters = { category: new Set(), severity: new Set(), status: new Set(), dept: "", search: "" };
   let firstLoad = true;
   let previousIds = new Set();
+  let pendingResolutionEvidence;
 
   function showAdminToast(message) {
     const el = document.getElementById("adminToast");
@@ -45,6 +46,8 @@
       applyFiltersAndRender();
     });
     document.getElementById("detailSave")?.addEventListener("click", saveDetail);
+    document.getElementById("detailResolutionEvidence")?.addEventListener("change", handleResolutionEvidence);
+    document.getElementById("detailStatusSelect")?.addEventListener("change", updateResolutionEvidenceState);
   }
 
   function buildFilterChips() {
@@ -127,9 +130,11 @@
     const pending = allComplaints.filter((c) => c.status === "Pending").length;
     const critical = allComplaints.filter((c) => c.ai_severity === "Critical").length;
     const hotspots = allComplaints.filter((c) => Number(c.nearby_report_count || 0) >= 3 && c.status !== "Resolved").length;
+    const delayed = allComplaints.filter((c) => (c.is_overdue || c.delay_reason || c.is_escalated) && c.status !== "Resolved").length;
     document.getElementById("tickerPending").textContent = pending;
     document.getElementById("tickerCritical").textContent = critical;
     document.getElementById("tickerHotspots").textContent = hotspots;
+    const delayedEl = document.getElementById("tickerDelayed"); if (delayedEl) delayedEl.textContent = delayed;
     document.getElementById("tickerTime").textContent = new Date().toLocaleTimeString();
   }
 
@@ -243,6 +248,18 @@
     const factorsEl = document.getElementById("detailRootFactors"); if (factorsEl) factorsEl.textContent = (c.root_cause_factors || []).join(" · ") || "Not available";
     const actionEl = document.getElementById("detailRecommendedAction"); if (actionEl) actionEl.textContent = c.recommended_action || "Inspect the reported location.";
 
+    const delayEl = document.getElementById("detailDelay");
+    if (delayEl) {
+      const delayed = Boolean(c.is_overdue) && c.status !== "Resolved";
+      delayEl.hidden = !(delayed || c.is_escalated || c.delay_reason);
+      if (delayed || c.is_escalated || c.delay_reason) {
+        const labels = [];
+        if (delayed) labels.push("SLA overdue");
+        if (c.is_escalated) labels.push("Escalated");
+        delayEl.innerHTML = `<strong>${labels.join(" · ")}</strong><span>${escapeHtml(c.delay_reason || "Projected service window has been exceeded.")}</span>`;
+      }
+    }
+
     const priorityEl = document.getElementById("detailPriority");
     if (priorityEl) {
       priorityEl.hidden = false;
@@ -264,7 +281,13 @@
     renderProgressTimeline(c.progress_updates || []);
     const media = document.getElementById("detailMedia");
     if (c.media_url) { media.src = c.media_url; media.hidden = false; } else { media.hidden = true; }
+    pendingResolutionEvidence = undefined;
+    const evidenceInput = document.getElementById("detailResolutionEvidence");
+    const evidencePreview = document.getElementById("detailResolutionEvidencePreview");
+    if (evidenceInput) evidenceInput.value = "";
+    if (evidencePreview) { if (c.resolution_media_url) { evidencePreview.src = c.resolution_media_url; evidencePreview.hidden = false; } else { evidencePreview.hidden = true; evidencePreview.removeAttribute("src"); } }
     document.getElementById("detailStatusSelect").value = c.status || "Pending";
+    updateResolutionEvidenceState();
     document.getElementById("detailDeptSelect").value = c.assigned_department || "Unassigned";
     const progressInput = document.getElementById("detailProgressMessage"); if (progressInput) progressInput.value = "";
     document.getElementById("detailSaveMsg").textContent = "";
@@ -279,6 +302,29 @@
     container.innerHTML = updates.slice().reverse().map((item) => `<div class="progress-event"><span>${formatDateTime(item.timestamp)}</span><strong>${escapeHtml(item.message)}</strong><em>${escapeHtml(item.kind || "system")}</em></div>`).join("");
   }
 
+  function updateResolutionEvidenceState() {
+    const status = document.getElementById("detailStatusSelect")?.value;
+    const input = document.getElementById("detailResolutionEvidence");
+    const label = document.querySelector(".resolution-evidence-field label");
+    if (input) input.disabled = status !== "Resolved";
+    if (label) label.classList.toggle("is-disabled", status !== "Resolved");
+  }
+
+  function handleResolutionEvidence(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { showAdminToast("Please choose an image file."); event.target.value = ""; return; }
+    if (file.size > 5 * 1024 * 1024) { showAdminToast("Completion evidence must be 5 MB or smaller."); event.target.value = ""; return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      pendingResolutionEvidence = String(reader.result || "");
+      const preview = document.getElementById("detailResolutionEvidencePreview");
+      if (preview) { preview.src = pendingResolutionEvidence; preview.hidden = false; }
+    };
+    reader.onerror = () => showAdminToast("Could not read the completion evidence photo.");
+    reader.readAsDataURL(file);
+  }
+
   async function saveDetail() {
     if (!selectedId) return;
     const status = document.getElementById("detailStatusSelect").value;
@@ -287,7 +333,9 @@
     const msg = document.getElementById("detailSaveMsg");
     msg.textContent = "Saving…";
     try {
-      const updated = await api.updateComplaint(selectedId, { status, assigned_department, progress_message });
+      const patch = { status, assigned_department, progress_message };
+      if (pendingResolutionEvidence !== undefined && status === "Resolved") patch.resolution_media_url = pendingResolutionEvidence;
+      const updated = await api.updateComplaint(selectedId, patch);
       const idx = allComplaints.findIndex((c) => c.id === selectedId);
       if (idx !== -1) allComplaints[idx] = updated;
       msg.textContent = "Saved and published to citizen tracking.";

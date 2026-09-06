@@ -36,6 +36,8 @@ class ComplaintUpdate(BaseModel):
     status: Optional[ComplaintStatus] = None
     assigned_department: Optional[ComplaintDepartment] = None
     progress_message: Optional[str] = Field(default=None, max_length=500)
+    delay_reason: Optional[str] = None
+    resolution_media_url: Optional[str] = None
 
 
 class ProgressUpdate(BaseModel):
@@ -51,6 +53,11 @@ class ComplaintResponse(BaseModel):
     latitude: Optional[float]
     longitude: Optional[float]
     media_url: Optional[str]
+    resolution_media_url: Optional[str] = None
+    source: str = "citizen"
+    escalation_level: int = 1
+    current_assignee: Optional[str] = None
+    sla_deadline: Optional[datetime] = None
     description: Optional[str]
     voice_transcript: Optional[str] = None
     ai_category: str
@@ -72,6 +79,10 @@ class ComplaintResponse(BaseModel):
     root_cause_confidence: Optional[float] = None
     recommended_action: Optional[str] = None
     prediction_basis: Optional[str] = None
+    
+    is_escalated: bool = False
+    delay_reason: Optional[str] = None
+    close_confirmed_at: Optional[datetime] = None
 
     priority_score: int = 0
     priority_reason: str = ""
@@ -79,6 +90,7 @@ class ComplaintResponse(BaseModel):
     duplicate_count: int = 0
     possible_duplicate_ids: list[str] = Field(default_factory=list)
     progress_updates: list[ProgressUpdate] = Field(default_factory=list)
+    is_overdue: bool = False
 
     @field_serializer(
         "created_at",
@@ -87,6 +99,8 @@ class ComplaintResponse(BaseModel):
         "resolved_at",
         "updated_at",
         "last_verified_at",
+        "close_confirmed_at",
+        "sla_deadline",
         when_used="json",
     )
     def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
@@ -120,3 +134,19 @@ class ComplaintAnalysisResponse(BaseModel):
     root_cause_confidence: Optional[float] = None
     recommended_action: Optional[str] = None
     prediction_basis: Optional[str] = None
+
+class UserCreate(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    name: str
+    email: str
+    created_at: datetime
