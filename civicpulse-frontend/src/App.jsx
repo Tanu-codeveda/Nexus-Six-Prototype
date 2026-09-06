@@ -406,7 +406,7 @@ function App() {
 
 const Header = ({ title, back }) => (
   <header className="topbar">
-    {back ? <button className="icon-btn" onClick={back}><Icon name="back" /></button> : <div className="brand-mark">CP</div>}
+    {back ? <button className="icon-btn" onClick={back}><Icon name="back" /></button> : <img src="/logo.png" alt="Logo" style={{ width: 34, height: 34, objectFit: 'contain' }} />}
     <div><div className="brand">CivicPulse <span>AI</span></div>{title && <div className="subhead">{title}</div>}</div>
     {!back && <button className="icon-btn" aria-label="Open Jharkhand helplines" title="Jharkhand helplines" onClick={() => window.dispatchEvent(new CustomEvent('civicpulse:open-helplines'))}><Icon name="phone" /></button>}
   </header>
@@ -795,8 +795,7 @@ function Login({ nav }) {
 
   return (
     <div className="page center-page">
-      <div className="brand-mark" style={{ marginBottom: '1rem', width: 48, height: 48, fontSize: 20 }}>CP</div>
-      <div className="brand" style={{ marginBottom: '2rem' }}>CivicPulse <span>AI</span></div>
+      <img src="/logo.png" alt="CivicPulse AI" style={{ width: '140px', marginBottom: '2rem', filter: 'drop-shadow(0 8px 16px rgba(0,0,0,0.1))' }} />
       
       <form onSubmit={handleLogin} style={{ width: '100%', maxWidth: 320, textAlign: 'left' }}>
         {error && <div style={{ color: 'red', marginBottom: '1rem', fontSize: '14px' }}>{error}</div>}
@@ -867,8 +866,7 @@ function Register({ nav }) {
 
   return (
     <div className="page center-page">
-      <div className="brand-mark" style={{ marginBottom: '1rem', width: 48, height: 48, fontSize: 20 }}>CP</div>
-      <div className="brand" style={{ marginBottom: '2rem' }}>CivicPulse <span>AI</span></div>
+      <img src="/logo.png" alt="CivicPulse AI" style={{ width: '140px', marginBottom: '2rem', filter: 'drop-shadow(0 8px 16px rgba(0,0,0,0.1))' }} />
       
       <form onSubmit={handleRegister} style={{ width: '100%', maxWidth: 320, textAlign: 'left' }}>
         {error && <div style={{ color: 'red', marginBottom: '1rem', fontSize: '14px' }}>{error}</div>}
