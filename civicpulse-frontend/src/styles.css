@@ -317,3 +317,11 @@
 
 .resolution-proof-card { margin-top: 10px; }
 .resolution-proof-image { width: 100%; max-height: 320px; object-fit: cover; display: block; margin-top: 10px; border-radius: 13px; border: 1px solid var(--line); background: #f2f4f7; }
+
+
+/* Privacy-preserving report reference */
+.privacy-token{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px;padding:12px 14px;border:1px solid var(--border,#dbe3ea);border-radius:12px;background:var(--surface-muted,#f6f8fa)}
+.privacy-token span,.token-inline span{font-size:12px;color:var(--muted,#65717d)}
+.privacy-token b,.token-inline b{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.05em}
+.token-note{font-size:12px!important;margin:8px 0 0!important;color:var(--muted,#65717d)!important}
+.token-inline{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border,#dbe3ea)}

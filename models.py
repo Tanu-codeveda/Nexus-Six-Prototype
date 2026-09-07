@@ -12,6 +12,8 @@ class Complaint(Base):
     # IoT / SLA integration fields. Existing demo databases are upgraded
     # additively by main.py at startup.
     source = Column(String, default="citizen", nullable=False)
+    # Privacy-preserving public tracking token; no citizen name/email is stored on complaints.
+    pseudonymous_id = Column(String, nullable=True, index=True)
     escalation_level = Column(Integer, default=1, nullable=False)
     current_assignee = Column(String, default="Level 1 Field Officer")
     sla_deadline = Column(DateTime, nullable=True)

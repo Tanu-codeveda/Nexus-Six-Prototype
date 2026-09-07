@@ -3,6 +3,7 @@ import binascii
 import json
 import logging
 import os
+import secrets
 import tempfile
 import urllib.request
 from datetime import datetime, timedelta
@@ -59,6 +60,7 @@ def ensure_schema_columns() -> None:
         "close_confirmed_at": "DATETIME",
         "resolution_media_url": "TEXT",
         "source": "TEXT DEFAULT 'citizen'",
+        "pseudonymous_id": "TEXT",
         "escalation_level": "INTEGER DEFAULT 1",
         "current_assignee": "TEXT DEFAULT 'Level 1 Field Officer'",
         "sla_deadline": "DATETIME",
@@ -375,6 +377,7 @@ def build_complaint_view(complaint: models.Complaint, all_complaints: list[model
         is_overdue = datetime.utcnow() > deadline
     return {
         "id": complaint.id,
+        "pseudonymous_id": getattr(complaint, "pseudonymous_id", None),
         "latitude": complaint.latitude,
         "longitude": complaint.longitude,
         "media_url": complaint.media_url,
@@ -609,7 +612,10 @@ def create_complaint(payload: schemas.ComplaintCreate, db: Session = Depends(get
         existing,
     )
     now = datetime.utcnow()
+    # Random public tracking reference; contains no direct personal information.
+    pseudonymous_token = f"CP-{secrets.token_hex(5).upper()}"
     complaint = models.Complaint(
+        pseudonymous_id=pseudonymous_token,
         latitude=payload.latitude,
         longitude=payload.longitude,
         media_url=payload.media_url,

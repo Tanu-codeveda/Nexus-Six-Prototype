@@ -460,6 +460,10 @@ The first startup may download the YOLO and Hugging Face model resources. Subseq
 
 This repository is a functional hackathon prototype, not a production municipal platform. Production deployment would additionally require stronger civic-domain model validation, authentication/authorization, secure media storage, a production database, monitoring, rate limiting, privacy controls, push/SMS/email notification infrastructure and deployment hardening.
 
+### Privacy-preserving report tracking
+
+Each citizen report receives a random pseudonymous tracking token (`CP-XXXXXXXXXX`). The token is returned by the API and shown on the citizen submission/tracking screens, allowing a report to be referenced without storing a citizen name, email or phone number on the complaint.
+
 ## Team Nexus Six
 
 **Hackathon:** Smart VIT Hackathon 2026

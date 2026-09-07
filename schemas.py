@@ -50,6 +50,7 @@ class ComplaintResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    pseudonymous_id: Optional[str] = None
     latitude: Optional[float]
     longitude: Optional[float]
     media_url: Optional[str]
